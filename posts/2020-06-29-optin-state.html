@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- taken from https://github.com/jgm/pandoc-templates/blob/05d510b4dc5af87cbf25d92fa8318f44e155b919/default.html5 -->
 <html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
 <head>
   <meta charset="utf-8" />
@@ -295,7 +296,7 @@ uniq |
 while read path; do
   path=&quot;/$path&quot;
   if [ -L &quot;$path&quot; ]; then
-    : # The path is a symbolic link, so is probably handles by NixOS already
+    : # The path is a symbolic link, so is probably handled by NixOS already
   elif [ -d &quot;$path&quot; ]; then
     : # The path is a directory, ignore
   else
@@ -469,5 +470,7 @@ Would you like a YAML &quot;lxd init&quot; preseed to be printed? (yes/no) [defa
 <li id="fn6" role="doc-endnote"><p>Something like <code>[ -d /root-blank ] &amp;&amp; notify-send -u critical "opt-in state" "rollback failed"</code> would be nice to run after logging in.<a href="#fnref6" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
 </section>
+<a href="../index.html">index</a>
+<script src="https://utteranc.es/client.js" repo="mt-caret/blog" issue-term="title" theme="github-light" crossorigin="anonymous" async></script>
 </body>
 </html>
