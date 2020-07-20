@@ -1,7 +1,10 @@
-/* http://bettermotherfuckingwebsite.com/ */
+/* based on http://bettermotherfuckingwebsite.com/ */
 body {
+  background: #F8F8F8;
+}
+article {
   margin: 40px auto;
-  max-width: 650px;
+  max-width: 800px;
   line-height: 1.6;
   font-size: 18px;
   color: #444;
@@ -9,4 +12,20 @@ body {
 }
 h1, h2, h3 {
   line-height: 1.2;
+}
+
+#navigation-bar {
+  position: fixed;
+  top: 0px;
+  left: 0px;
+  right: 0px;
+  margin-top: 0px;
+  padding: 5px;
+  width: 100%;
+  background: #EEEEEE;
+}
+
+#navigation-content {
+  max-width: 1000px;
+  margin: auto;
 }
