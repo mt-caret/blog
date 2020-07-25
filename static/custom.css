@@ -31,6 +31,14 @@ h1, h2, h3 {
   margin: auto;
 }
 
+/* https://stackoverflow.com/a/28824157 */
+:target::before {
+  content: "";
+  display: block;
+  height: 40px;
+  margin: -40px 0 0;
+}
+
 pre {
   background: #EAEAEA;
   border-radius: 5px;
