@@ -23,9 +23,27 @@ h1, h2, h3 {
   padding: 5px;
   width: 100%;
   background: #EEEEEE;
+  z-index: 1;
 }
 
 #navigation-content {
   max-width: 1000px;
   margin: auto;
+}
+
+pre {
+  background: #EAEAEA;
+  border-radius: 5px;
+  overflow: auto;
+  line-height: 1.4;
+  font-size: 80%;
+}
+
+code {
+  background: #EAEAEA;
+  border-radius: 5px;
+}
+
+pre > code {
+  white-space: pre;
 }
