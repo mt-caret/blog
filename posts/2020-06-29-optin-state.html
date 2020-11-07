@@ -400,7 +400,7 @@ sudo cp {,/persist}/etc/NIXOS</code></pre>
 <pre><code>reboot</code></pre>
 <p>If something goes wrong and <code>/mnt/root</code> isn’t deleted, <code>btrfs subvolume snapshot /mnt/root-blank /mnt/root</code> will just create a snapshot under <code>/mnt/root</code>, so a quick hack to check if rolling back failed without consulting <code>journalctl -b</code> is to see if <code>/mnt/root/root-blank</code> exists.<a href="#fn6" class="footnote-ref" id="fnref6" role="doc-noteref"><sup>6</sup></a></p>
 <h1 id="adding-nixos-services-case-study-docker-and-lxd">Adding NixOS Services Case Study (Docker and LXD)</h1>
-<p>As much as Nix and NixOS are attractive for everyday use, sometimes the time it takes to get some language or package running on NixOS just doesn’t seem worth it. That’s when container runtimes like Docker and LXD can help. These tools can act as an escape hatch to get some software working quikly on your machine.</p>
+<p>As much as Nix and NixOS are attractive for everyday use, sometimes the time it takes to get some language or package running on NixOS just doesn’t seem worth it. That’s when container runtimes like Docker and LXD can help. These tools can act as an escape hatch to get some software working quickly on your machine.</p>
 <p>Here, we’ll go through the workflow for getting NixOS services to work with opt-in state, with Docker and LXD as examples.</p>
 <p>First, let’s get Docker and LXD running to inspect what kind of state they have. Thanks to NixOS, this is a just a few lines of configuration.</p>
 <pre><code>  virtualisation = {
