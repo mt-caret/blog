@@ -334,6 +334,7 @@ sudo mount -o subvol=/ /dev/mapper/enc /mnt
     &quot;NetworkManager/system-connections&quot;.source = &quot;/persist/etc/NetworkManager/system-connections&quot;;
     adjtime.source = &quot;/persist/etc/adjtime&quot;;
     NIXOS.source = &quot;/persist/etc/NIXOS&quot;;
+    machine-id.source = &quot;/persist/etc/machine-id&quot;;
   };
   systemd.tmpfiles.rules = [
     &quot;L /var/lib/NetworkManager/secret_key - - - - /persist/var/lib/NetworkManager/secret_key&quot;
@@ -465,6 +466,7 @@ Would you like a YAML &quot;lxd init&quot; preseed to be printed? (yes/no) [defa
       fsType = &quot;btrfs&quot;;
       options = [ &quot;subvol=lxd&quot; &quot;compress=zstd&quot; &quot;noatime&quot; ];
     };</code></pre>
+<p>EDIT 2020-01-26: Added persistence for <code>/etc/machine-id</code>, which fixes an issue where journalctl fails to find logs from past boots, among various others. Thanks j-hui for pointing this out!</p>
 <p><small> Thanks to cannorin and __pandaman64__ for comments and suggestions. </small></p>
 <section class="footnotes" role="doc-endnotes">
 <hr />
