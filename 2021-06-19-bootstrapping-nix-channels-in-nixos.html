@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<!-- taken from https://github.com/jgm/pandoc-templates/blob/05d510b4dc5af87cbf25d92fa8318f44e155b919/default.html5 -->
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="" >
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+      <meta name="dcterms.date" content="2021-06-19" />
+      <title>Bootstrapping Nix channels in NixOS</title>
+  <link rel="stylesheet" href="./static/reset.css" />
+  <link rel="stylesheet" href="./static/custom.css" />
+  <link rel="stylesheet" href="./static/highlighting.css" />
+    <!--[if lt IE 9]>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
+  <![endif]-->
+  </head>
+
+<body>
+  <div id="navigation-bar">
+    <div id="navigation-content">
+      <a href="../index.html">index</a>
+    </div>
+  </div>
+  <article>
+            <header id="title-block-header">
+      <h1 class="title">Bootstrapping Nix channels in NixOS</h1>
+                        <p class="date">2021-06-19</p>
+            <!--
+            <p class="category">category: <a href="../category/tech.html">tech</a></p>
+                  <p class="category">
+        tags: <a href="../tag/NixOS.html">NixOS</a> <a href="../tag/Nix.html">Nix</a> 
+      </p>
+          -->
+    </header>
+            <p>A few years after starting to use NixOS, I realized that
+            the experience of reproducing my setup on a new machine has
+            become <em>harder</em>, not easier, especially after setting
+            up <a href="./2020-06-29-optin-state.html">encryption and
+            opt-in state</a>. This is rather embarrassing, so here’s my
+            first step in remedying that.</p>
+            <p>My NixOS configuration currently depends on multiple
+            channels (<code>&lt;nixos-20.09&gt;</code>,
+            <code>&lt;nixos-unstable&gt;</code>,
+            <code>&lt;nixpkgs-unstable&gt;</code>, and <a
+            href="https://github.com/nix-community/home-manager">home-manager</a>):</p>
+            <pre><code>https://channels.nixos.org/nixos-20.09/nixexprs.tar.xz nixos
+https://channels.nixos.org/nixos-unstable/nixexprs.tar.xz unstable
+https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.xz actual-unstable
+https://github.com/nix-community/home-manager/archive/release-20.09.tar.gz home-manager</code></pre>
+            <p>What’s painful about this is that on a clean install the
+            various nix channels aren’t present on my machine, and I
+            need to manually set up the required Nix channels for the
+            root user via the <code>nix-channel</code> command or by
+            writing to <code>/root/.nix-channels</code>. I always forget
+            to do this, and get a variant of the following error:</p>
+            <pre><code>nix-repl&gt; &lt;foo&gt;
+error: file &#39;foo&#39; was not found in the Nix search path (add it using $NIX_PATH or -I), at (string):1:1</code></pre>
+            <p>The recommended fix I usually hear is to avoid using Nix
+            channels entirely and <a
+            href="https://github.com/NixOS/nixpkgs/issues/62832">pin the
+            various nixpkgs in configuration.nix</a>. However, <em>I
+            don’t want to do this</em>. It’s painful to have to update
+            the pin every so often, and my nixpkgs lags behind Nix
+            channels so I get a lot of binary cache misses and end up
+            building many packages from source, making the experience
+            not unlike Gentoo.</p>
+            <p>On the other hand, doing
+            <code>builtins.fetchTarball</code> every time also isn’t
+            ideal. Who wants to require an Internet connect every time
+            you need to change the font size for your decleratively
+            configured terminal emulator? If we sacrifice just a bit of
+            determinism (but not too much) we can do better.</p>
+            <p>In the example above, when the import path
+            <code>foo</code> doesn’t exist, evaluation of
+            <code>&lt;foo&gt;</code> results in a plain old exception
+            which can be caught with <code>builtins.tryEval</code>:</p>
+            <div class="sourceCode" id="cb3"><pre
+            class="sourceCode nix"><code class="sourceCode nix"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">let</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>  <span class="va">resolvedPath</span> <span class="op">=</span> <span class="bu">builtins</span>.tryEval &lt;nixos<span class="op">-</span>unstable&gt;<span class="op">;</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="kw">in</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> resolvedNixPath.success <span class="kw">then</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    resolvedNixPath.value</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>  <span class="kw">else</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="bu">builtins</span>.<span class="bu">fetchTarball</span> <span class="st">&quot;https://channels.nixos.org/nixos-unstable/nixexprs.tar.xz&quot;</span></span></code></pre></div>
+            <p>By checking if evaluation of the Nix import path threw an
+            exception or not, we can determine if a particular
+            <code>import &lt;foo&gt;</code> succeeded or not. We can
+            then import nixpkgs normally if the import succeeds, or fall
+            back to fetching a tarball and importing from there. This
+            can be further extended to automatically create
+            <code>.nix-channels</code> files for root and <a
+            href="https://github.com/nix-community/home-manager">home-manager</a>
+            users:</p>
+            <div class="sourceCode" id="cb4"><pre
+            class="sourceCode nix"><code class="sourceCode nix"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">let</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>  <span class="va">resolve</span> <span class="op">=</span> <span class="va">nixPath</span><span class="op">:</span> <span class="va">defaultUrl</span><span class="op">:</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">let</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>      <span class="va">resolvedNixPath</span> <span class="op">=</span> <span class="bu">builtins</span>.tryEval nixPath<span class="op">;</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">in</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>      <span class="kw">if</span> resolvedNixPath.success <span class="kw">then</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>        resolvedNixPath.value</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>      <span class="kw">else</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>        <span class="bu">builtins</span>.trace</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>          <span class="st">&quot;WARNING: could not resolve path, defaulting to &#39;</span><span class="sc">${</span>defaultUrl<span class="sc">}</span><span class="st">&#39;&quot;</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>          <span class="op">(</span><span class="bu">builtins</span>.<span class="bu">fetchTarball</span> defaultUrl<span class="op">);</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>  <span class="va">channelUrl</span> <span class="op">=</span> <span class="va">channel</span><span class="op">:</span> <span class="st">&quot;https://channels.nixos.org/</span><span class="sc">${</span>channel<span class="sc">}</span><span class="st">/nixexprs.tar.xz&quot;</span><span class="op">;</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>  <span class="va">version</span> <span class="op">=</span> <span class="st">&quot;20.09&quot;</span><span class="op">;</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>  <span class="va">channels</span> <span class="op">=</span> <span class="op">[</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>      <span class="va">importPath</span> <span class="op">=</span> &lt;nixos&gt;<span class="op">;</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>      <span class="va">name</span> <span class="op">=</span> <span class="st">&quot;nixos&quot;</span><span class="op">;</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>      <span class="va">url</span> <span class="op">=</span> channelUrl <span class="st">&quot;nixos-</span><span class="sc">${</span>version<span class="sc">}</span><span class="st">&quot;</span><span class="op">;</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>      <span class="va">importPath</span> <span class="op">=</span> &lt;unstable&gt;<span class="op">;</span></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>      <span class="va">name</span> <span class="op">=</span> <span class="st">&quot;unstable&quot;</span><span class="op">;</span></span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>      <span class="va">url</span> <span class="op">=</span> channelUrl <span class="st">&quot;nixos-unstable&quot;</span><span class="op">;</span></span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>      <span class="va">importPath</span> <span class="op">=</span> &lt;actual<span class="op">-</span>unstable&gt;<span class="op">;</span></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>      <span class="va">name</span> <span class="op">=</span> <span class="st">&quot;actual-unstable&quot;</span><span class="op">;</span></span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>      <span class="va">url</span> <span class="op">=</span> channelUrl <span class="st">&quot;nixpkgs-unstable&quot;</span><span class="op">;</span></span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>  <span class="op">];</span></span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a>  <span class="va">allNixpkgs</span> <span class="op">=</span></span>
+<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a>    <span class="bu">builtins</span>.listToAttrs <span class="op">(</span></span>
+<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a>      <span class="bu">builtins</span>.<span class="bu">map</span> <span class="op">(</span></span>
+<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span> <span class="va">importPath</span><span class="op">,</span> <span class="va">name</span><span class="op">,</span> <span class="va">url</span> <span class="op">}</span>:</span>
+<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a>          <span class="op">{</span></span>
+<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a>            <span class="kw">inherit</span> name<span class="op">;</span></span>
+<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a>            <span class="va">value</span> <span class="op">=</span> <span class="bu">import</span> <span class="op">(</span>resolve importPath url<span class="op">)</span> <span class="op">{};</span></span>
+<span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a>          <span class="op">}</span></span>
+<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a>      <span class="op">)</span> channels</span>
+<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a>    <span class="op">);</span></span>
+<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a><span class="kw">in</span></span>
+<span id="cb4-42"><a href="#cb4-42" aria-hidden="true" tabindex="-1"></a>allNixpkgs</span>
+<span id="cb4-43"><a href="#cb4-43" aria-hidden="true" tabindex="-1"></a><span class="op">//</span> <span class="kw">rec</span> <span class="op">{</span></span>
+<span id="cb4-44"><a href="#cb4-44" aria-hidden="true" tabindex="-1"></a>  <span class="va">nix-channels</span> <span class="op">=</span> allNixpkgs.nixos.writeTextFile <span class="op">{</span></span>
+<span id="cb4-45"><a href="#cb4-45" aria-hidden="true" tabindex="-1"></a>    <span class="va">name</span> <span class="op">=</span> <span class="st">&quot;.nix-channels&quot;</span><span class="op">;</span></span>
+<span id="cb4-46"><a href="#cb4-46" aria-hidden="true" tabindex="-1"></a>    <span class="va">text</span> <span class="op">=</span></span>
+<span id="cb4-47"><a href="#cb4-47" aria-hidden="true" tabindex="-1"></a>      <span class="bu">builtins</span>.concatStringsSep <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb4-48"><a href="#cb4-48" aria-hidden="true" tabindex="-1"></a>        <span class="op">(</span><span class="bu">builtins</span>.<span class="bu">map</span> <span class="op">({</span> <span class="va">name</span><span class="op">,</span> <span class="va">url</span><span class="op">,</span> <span class="op">...</span> <span class="op">}</span>: <span class="st">&quot;</span><span class="sc">${</span>url<span class="sc">}</span><span class="st"> </span><span class="sc">${</span>name<span class="sc">}</span><span class="st">&quot;</span><span class="op">)</span> channels<span class="op">);</span></span>
+<span id="cb4-49"><a href="#cb4-49" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb4-50"><a href="#cb4-50" aria-hidden="true" tabindex="-1"></a>  <span class="va">home-manager-config</span> <span class="op">=</span> <span class="op">{</span> <span class="va">pkgs</span><span class="op">,</span> <span class="va">lib</span><span class="op">,</span> <span class="op">...</span> <span class="op">}</span>: <span class="op">{</span></span>
+<span id="cb4-51"><a href="#cb4-51" aria-hidden="true" tabindex="-1"></a>    <span class="va">home</span>.<span class="va">file</span>.<span class="st">&quot;</span>.nix-channels<span class="st">&quot;</span>.<span class="va">source</span> <span class="op">=</span> nix<span class="op">-</span>channels<span class="op">;</span></span>
+<span id="cb4-52"><a href="#cb4-52" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb4-53"><a href="#cb4-53" aria-hidden="true" tabindex="-1"></a>  <span class="va">nixos-config</span> <span class="op">=</span> <span class="op">{</span> <span class="op">...</span> <span class="op">}</span>: <span class="op">{</span></span>
+<span id="cb4-54"><a href="#cb4-54" aria-hidden="true" tabindex="-1"></a>    <span class="va">systemd</span>.<span class="va">tmpfiles</span>.<span class="va">rules</span> <span class="op">=</span> <span class="op">[</span></span>
+<span id="cb4-55"><a href="#cb4-55" aria-hidden="true" tabindex="-1"></a>      <span class="co"># unlike &quot;L&quot;, &quot;L+&quot; will remove the existing file if it exists and replace</span></span>
+<span id="cb4-56"><a href="#cb4-56" aria-hidden="true" tabindex="-1"></a>      <span class="co"># it a symlink</span></span>
+<span id="cb4-57"><a href="#cb4-57" aria-hidden="true" tabindex="-1"></a>      <span class="st">&quot;L+ /root/.nix-channels - - - - </span><span class="sc">${</span>nix<span class="op">-</span>channels<span class="sc">}</span><span class="st">&quot;</span></span>
+<span id="cb4-58"><a href="#cb4-58" aria-hidden="true" tabindex="-1"></a>    <span class="op">];</span></span>
+<span id="cb4-59"><a href="#cb4-59" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb4-60"><a href="#cb4-60" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+            <p>where importing <code>home-manager-config</code> for
+            home-manager and <code>nixos-config</code> for root users
+            will just work.</p>
+            <p>Upgrading the NixOS version just works as well; simply
+            bumping <code>version</code> and running
+            <code>sudo nixos-rebuild switch --upgrade</code> twice will
+            do it, where the first <code>nixos-rebuild switch</code>
+            updates the <code>.nix-channel</code> file and the second
+            <code>nixos-rebuild switch</code> does the actual
+            upgrading.</p>
+            <p>I’m pretty happy that I no longer have to think (too
+            hard) about this part of the clean install process anymore.
+            Unfortunately, since I use <a
+            href="https://github.com/NixOS/nixpkgs/issues/34796#issuecomment-413559672">VirtualBox
+            with the extension pack enabled</a>, every time I
+            <code>nixos-rebuild switch --upgrade</code> I still get the
+            Gentoo experience anyway :cry:.</p>
+                <a href="../index.html">index</a>
+    <script src="https://utteranc.es/client.js" repo="mt-caret/blog" issue-term="pathname" theme="github-light"
+      crossorigin="anonymous" async></script>
+  </article>
+</body>
+
+</html>

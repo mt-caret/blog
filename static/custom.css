@@ -1,42 +1,18 @@
 /* based on http://bettermotherfuckingwebsite.com/ */
+
 body {
-  background: #F8F8F8;
-}
-article {
   margin: 40px auto;
-  max-width: 800px;
+  max-width: 650px;
   line-height: 1.6;
-  font-size: 18px;
+  font-size: 14px;
   color: #444;
-  padding: 0 10px;
-}
-h1, h2, h3 {
-  line-height: 1.2;
+  padding: 0 10px
 }
 
-#navigation-bar {
-  position: fixed;
-  top: 0px;
-  left: 0px;
-  right: 0px;
-  margin-top: 0px;
-  padding: 5px;
-  width: 100%;
-  background: #EEEEEE;
-  z-index: 1;
-}
-
-#navigation-content {
-  max-width: 1000px;
-  margin: auto;
-}
-
-/* https://stackoverflow.com/a/28824157 */
-:target::before {
-  content: "";
-  display: block;
-  height: 40px;
-  margin: -40px 0 0;
+h1,
+h2,
+h3 {
+  line-height: 1.2
 }
 
 pre {
@@ -47,11 +23,7 @@ pre {
   font-size: 80%;
 }
 
-code {
+.sourceCode {
   background: #EAEAEA;
   border-radius: 5px;
-}
-
-pre > code {
-  white-space: pre;
 }

@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<!-- taken from https://github.com/jgm/pandoc-templates/blob/05d510b4dc5af87cbf25d92fa8318f44e155b919/default.html5 -->
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="" >
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+      <meta name="dcterms.date" content="2020-07-25" />
+      <title>Setting up LDAP Authentication with NixOS</title>
+  <link rel="stylesheet" href="./static/reset.css" />
+  <link rel="stylesheet" href="./static/custom.css" />
+  <link rel="stylesheet" href="./static/highlighting.css" />
+    <!--[if lt IE 9]>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
+  <![endif]-->
+  </head>
+
+<body>
+  <div id="navigation-bar">
+    <div id="navigation-content">
+      <a href="../index.html">index</a>
+    </div>
+  </div>
+  <article>
+            <header id="title-block-header">
+      <h1 class="title">Setting up LDAP Authentication with NixOS</h1>
+                        <p class="date">2020-07-25</p>
+            <!--
+            <p class="category">category: <a href="../category/tech.html">tech</a></p>
+                  <p class="category">
+        tags: <a href="../tag/NixOS.html">NixOS</a> <a href="../tag/Nix.html">Nix</a> 
+      </p>
+          -->
+    </header>
+            <p>At work, we manage an OpenLDAP server that handles
+            authentication and authorization for various services that
+            we provide. All machines run Ubuntu with individual service
+            being containerized and run in LXD. I was interested in
+            testing some open source projects out to integrate into our
+            infrastructure.</p>
+            <p>However, finding out the convoluted installation
+            instructions for software on Ubuntu and turning it into a
+            provisioning script is always a bit of a pain, so I decided
+            to use NixOS this time to quickly try it out. The
+            requirements were fairly involved, though.</p>
+            <ul>
+            <li>The service needs to run containerized on LXD</li>
+            <li><em>Only</em> the users in the <code>admin</code> LDAP
+            group should be able to
+            <ul>
+            <li>ssh in, with automatic home directory creation</li>
+            <li>access a web interface via HTTPS<a href="#fn1"
+            class="footnote-ref" id="fnref1"
+            role="doc-noteref"><sup>1</sup></a></li>
+            </ul></li>
+            </ul>
+            <p>I’ll go through the steps I took to meet each
+            requirement, one by one.</p>
+            <h1 id="setting-up-a-nixos-lxd-container">Setting up a NixOS
+            LXD container</h1>
+            <p>(If you’re not interested in LXD, you can just skip to <a
+            href="#ldap-authentication">LDAP Authentication</a>)</p>
+            <p>Thanks to <a
+            href="https://github.com/nix-community/nixos-generators">nix-community/nixos-generators</a>,
+            this is <a href="https://www.srid.ca/2012301.html">pretty
+            straightforward</a>. First, we want to start off with a
+            configuration that’s similar to that found in Ubuntu LXD
+            images:</p>
+            <div class="sourceCode" id="cb1"><pre
+            class="sourceCode nix"><code class="sourceCode nix"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># configuration.nix</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">config</span><span class="op">,</span> <span class="va">pkgs</span><span class="op">,</span> <span class="op">...</span> <span class="op">}</span>:</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="co"># https://github.com/NixOS/nixpkgs/issues/9735#issuecomment-500164017</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="va">systemd</span>.<span class="va">services</span>.<span class="st">&quot;</span>console-getty<span class="st">&quot;</span>.<span class="va">enable</span> <span class="op">=</span> <span class="cn">false</span><span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="va">systemd</span>.<span class="va">services</span>.<span class="st">&quot;getty@&quot;</span>.<span class="va">enable</span> <span class="op">=</span> <span class="cn">false</span><span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>  <span class="va">imports</span> <span class="op">=</span> <span class="op">[</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="ss">nixpkgs/nixos/modules/virtualisation/lxc-container.nix</span>&gt;</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>  <span class="op">];</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>  <span class="va">networking</span>.<span class="va">hostName</span> <span class="op">=</span> <span class="st">&quot;nixos&quot;</span><span class="op">;</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>  <span class="va">services</span>.<span class="va">openssh</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    <span class="va">enable</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="va">permitRootLogin</span> <span class="op">=</span> <span class="st">&quot;no&quot;</span><span class="op">;</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>  <span class="va">users</span>.<span class="va">users</span>.<span class="va">nixos</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    <span class="va">isNormalUser</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    <span class="va">extraGroups</span> <span class="op">=</span> <span class="op">[</span> <span class="st">&quot;wheel&quot;</span> <span class="op">];</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>  <span class="va">security</span>.<span class="va">sudo</span>.<span class="va">wheelNeedsPassword</span> <span class="op">=</span> <span class="cn">false</span><span class="op">;</span></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>  <span class="va">environment</span>.<span class="va">systemPackages</span> <span class="op">=</span> <span class="kw">with</span> pkgs<span class="op">;</span> <span class="op">[</span></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    vim</span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>    htop</span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>    tmux</span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>    wget</span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>  <span class="op">];</span></span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a>  <span class="va">networking</span>.<span class="va">useDHCP</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+            <p>With this, we can create an LXD image with the following
+            command:</p>
+            <div class="sourceCode" id="cb2"><pre
+            class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nix-shell</span> <span class="at">-p</span> nixos-generators <span class="at">--run</span> <span class="dt">\</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="st">&#39;lxc image import --alias nixos \</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="st">    $(nixos-generate --format lxc-metadata --configuration ./configuration.nix) \</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="st">    $(nixos-generate --format lxc --configuration ./configuration.nix)&#39;</span></span></code></pre></div>
+            <p>Now that we’ve created an image under the alias
+            <code>nixos</code>, we can launch a NixOS container with
+            <code>lxc launch nixos nixos-test -c security.nesting=true</code>.</p>
+            <p>Once an alias is defined like this:</p>
+            <div class="sourceCode" id="cb3"><pre
+            class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">lxc</span> alias add nixos <span class="st">&#39;exec @ARGS@ --mode interactive -- /run/current-system/sw/bin/login -p -f nixos&#39;</span></span></code></pre></div>
+            <p>Logging into a running NixOS container is as simple as
+            <code>lxc nixos nixos-test</code>. We can now fill in
+            <code>/etc/nixos/configuration.nix</code> and
+            <code>sudo nixos-rebuild switch</code> as needed.</p>
+            <h1 id="ldap-authentication">LDAP Authentication</h1>
+            <p>Setting up LDAP authentication was… not as
+            straightforward as I’d hoped.</p>
+            <h2 id="first-attempt">First Attempt</h2>
+            <p>Let’s forget about group authorization for a moment, and
+            try to get LDAP-based ssh logins working.</p>
+            <div class="sourceCode" id="cb4"><pre
+            class="sourceCode nix"><code class="sourceCode nix"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">lib</span><span class="op">,</span> <span class="va">config</span><span class="op">,</span> <span class="va">pkgs</span><span class="op">,</span> <span class="op">...</span> <span class="op">}</span>:</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>  <span class="va">users</span>.<span class="va">ldap</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="va">enable</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="va">base</span> <span class="op">=</span> <span class="st">&quot;dc=example,dc=com&quot;</span><span class="op">;</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    <span class="va">server</span> <span class="op">=</span> <span class="st">&quot;ldap://example.com/&quot;</span><span class="op">;</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    <span class="va">useTLS</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    <span class="va">extraConfig</span> <span class="op">=</span> <span class="st">&#39;&#39;</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="st">      ldap_version 3</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="st">      pam_password md5</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="st">    &#39;&#39;</span><span class="op">;</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>  <span class="va">security</span>.<span class="va">pam</span>.<span class="va">services</span>.<span class="va">sshd</span>.<span class="va">makeHomeDir</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+            <p>Note that the LDAP server we are using is configured to
+            allow anonymous binding and authentication, which may not
+            fit your use-case.</p>
+            <p>Unfortunately, this doesn’t work; attempting to login as
+            a LDAP user gives errors like the following:</p>
+            <pre class="plaintext"><code>Jul 24 10:51:23 nixos sshd[11992]: Postponed keyboard-interactive for invalid user nixos-user from a.b.c.d port 59828 ssh2 [preauth]
+Jul 24 10:51:25 nixos sshd[11994]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=a.b.c.d  user=nixos-user
+Jul 24 10:51:25 nixos sshd[11994]: pam_ldap: error trying to bind as user &quot;uid=nixos-user,ou=Users,dc=example,dc=com&quot; (Invalid credentials)
+Jul 24 10:51:26 nixos sshd[11992]: error: PAM: Authentication failure for illegal user nixos-user from a.b.c.d</code></pre>
+            <p>This is frustratingly misleading since the real culprit
+            is this, slightly preceding, message from sshd:</p>
+            <pre><code>Jul 24 10:51:23 nixos sshd[11992]: User nixos-user not allowed because shell /bin/bash does not exist</code></pre>
+            <p>This occurs because in our LDAP server, we had set users’
+            LDAP loginShell attribute to <code>/bin/bash</code>. In
+            hindsight, I don’t think this was such a bad a thing to do,
+            considering that I’ve never dealt with a single system in
+            which <code>/bin/bash</code> doesn’t exist (with the
+            exception of NixOS, of course :smile: ).</p>
+            <h2 id="second-attempt">Second Attempt</h2>
+            <p><a href="https://serverfault.com/a/137996">The standard
+            approach</a> to solving this problem is configuring the LDAP
+            client to override the relevant attribute:</p>
+            <div class="sourceCode" id="cb7"><pre
+            class="sourceCode nix"><code class="sourceCode nix"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>...</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  <span class="va">users</span>.<span class="va">ldap</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">...</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    <span class="va">extraConfig</span> = &#39;&#39;</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>      <span class="op">...</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>      <span class="va">nss_override_attribute_value</span> <span class="va">loginShell</span> /<span class="va">run</span>/<span class="va">current-system</span>/<span class="va">sw</span>/<span class="va">bin</span>/<span class="va">bash</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>    &#39;&#39;;</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>  ...</span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+            <p>Unfortunately, this doesn’t seem to solve the issue, and
+            sshd continues to complain about <code>/bin/bash</code>
+            missing.<a href="#fn2" class="footnote-ref" id="fnref2"
+            role="doc-noteref"><sup>2</sup></a></p>
+            <p>This seems to leave us with changing the
+            <code>loginShell</code> attributes to <code>/bin/sh</code>,
+            since that’s the only way to accommodate NixOS systems while
+            maintaining compatibility with the non-NixOS systems also
+            using LDAP. But <code>/bin/sh</code> isn’t a nice shell to
+            work in, so do we really want to force this on everyone
+            across all machines? Well, there is one easy trick to make
+            this all go away; just symlink <code>/bin/bash</code> to
+            <code>/run/current-system/sw/bin/bash</code> <a
+            href="https://discourse.nixos.org/t/add-bin-bash-to-avoid-unnecessary-pain/5673/38">:gasp:</a>.</p>
+            <div class="sourceCode" id="cb8"><pre
+            class="sourceCode nix"><code class="sourceCode nix"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">lib</span><span class="op">,</span> <span class="va">config</span><span class="op">,</span> <span class="va">pkgs</span><span class="op">,</span> <span class="op">...</span> <span class="op">}</span>:</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>  <span class="va">users</span>.<span class="va">ldap</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    <span class="va">enable</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    <span class="va">base</span> <span class="op">=</span> <span class="st">&quot;dc=example,dc=com&quot;</span><span class="op">;</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>    <span class="va">server</span> <span class="op">=</span> <span class="st">&quot;ldap://example.com/&quot;</span><span class="op">;</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>    <span class="va">useTLS</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>    <span class="va">extraConfig</span> <span class="op">=</span> <span class="st">&#39;&#39;</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="st">      ldap_version 3</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="st">      pam_password md5</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a><span class="st">      # TOFIX: this does not work for some reason</span></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a><span class="st">      # # https://serverfault.com/a/137996</span></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a><span class="st">      # nss_override_attribute_value loginShell /run/current-system/sw/bin/bash</span></span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a><span class="st">    &#39;&#39;</span><span class="op">;</span></span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>  <span class="co"># evil, horrifying hack for dysfunctional nss_override_attribute_value</span></span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a>  <span class="va">systemd</span>.<span class="va">tmpfiles</span>.<span class="va">rules</span> <span class="op">=</span> <span class="op">[</span></span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;L /bin/bash - - - - /run/current-system/sw/bin/bash&quot;</span></span>
+<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a>  <span class="op">];</span></span>
+<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+            <h2
+            id="group-based-authorization-and-home-directory-creation">Group-based
+            Authorization and Home Directory Creation</h2>
+            <p>LDAP group-based authorization was also not as
+            straightforward as I’d hoped. Adding
+            <code>pam_groupdn cn=admin,ou=Groups,dc=example,dc=com</code>
+            to <code>users.ldap.extraConfig</code> only seems to work
+            when users solely belong to the <code>admin</code> group,
+            which was not the case for us. Instead, using
+            <code>pam_listfile.so</code> got us what we wanted:</p>
+            <div class="sourceCode" id="cb9"><pre
+            class="sourceCode nix"><code class="sourceCode nix"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>...</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  <span class="op">...</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  <span class="va">security</span>.<span class="va">pam</span>.<span class="va">services</span>.<span class="va">sshd</span> = {</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>    <span class="va">makeHomeDir</span> = <span class="va">true</span>;</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>    <span class="co"># see https://stackoverflow.com/a/47041843 for why this is required</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>    <span class="va">text</span> = <span class="va">lib</span>.<span class="va">mkDefault</span> (</span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>      <span class="va">lib</span>.<span class="va">mkBefore</span> &#39;&#39;</span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>        <span class="va">auth</span> <span class="va">required</span> <span class="va">pam_listfile</span>.<span class="va">so</span> \</span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>          <span class="va">item</span>=<span class="va">group</span> <span class="va">sense</span>=<span class="va">allow</span> <span class="va">onerr</span>=<span class="va">fail</span> <span class="va">file</span>=/<span class="va">etc</span>/<span class="va">allowed_groups</span></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>      &#39;&#39;</span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>    );</span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span>;</span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>  environment.etc.allowed_groups = <span class="op">{</span></span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>    <span class="va">text</span> <span class="op">=</span> <span class="st">&quot;admins&quot;</span><span class="op">;</span></span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>    <span class="va">mode</span> <span class="op">=</span> <span class="st">&quot;0444&quot;</span><span class="op">;</span></span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span>;</span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>  ...</span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+            <h2 id="ldap-authentication-for-nginx">LDAP Authentication
+            for Nginx</h2>
+            <p>This is actually just a variation on <a
+            href="https://nixos.wiki/wiki/Nginx#Authentication_via_PAM">the
+            example for PAM authentication for Nginx on the NixOS
+            Wiki</a> used along with <code>pam_listfile.so</code>:</p>
+            <div class="sourceCode" id="cb10"><pre
+            class="sourceCode nix"><code class="sourceCode nix"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>...</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>  <span class="op">...</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>  <span class="va">services</span>.<span class="va">nginx</span> = {</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>    <span class="va">enable</span> = <span class="va">true</span>;</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>    <span class="va">package</span> = (<span class="va">pkgs</span>.<span class="va">nginx</span>.<span class="va">override</span> { <span class="va">modules</span> = [ <span class="va">pkgs</span>.<span class="va">nginxModules</span>.<span class="va">pam</span> ]; <span class="op">}</span>);</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>    virtualHosts.<span class="st">&quot;www.example.com&quot;</span> = <span class="op">{</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>      <span class="va">enableACME</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>      <span class="va">forceSSL</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>      ...</span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>      <span class="va">extraConfig</span> <span class="op">=</span> <span class="st">&#39;&#39;</span></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a><span class="st">        auth_pam &quot;LDAP Authentication Required&quot;;</span></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a><span class="st">        auth_pam_service_name &quot;nginx&quot;;</span></span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a><span class="st">      &#39;&#39;</span><span class="op">;</span></span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span>;</span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a>  };</span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a>  security.pam.services.nginx.text = <span class="st">&#39;&#39;</span></span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a><span class="st">    auth    required     pam_listfile.so \</span></span>
+<span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a><span class="st">                         item=group sense=allow onerr=fail file=/etc/allowed_groups</span></span>
+<span id="cb10-20"><a href="#cb10-20" aria-hidden="true" tabindex="-1"></a><span class="st">    auth    required     </span><span class="sc">${</span>pkgs.pam_ldap<span class="sc">}</span><span class="st">/lib/security/pam_ldap.so</span></span>
+<span id="cb10-21"><a href="#cb10-21" aria-hidden="true" tabindex="-1"></a><span class="st">    account required     </span><span class="sc">${</span>pkgs.pam_ldap<span class="sc">}</span><span class="st">/lib/security/pam_ldap.so</span></span>
+<span id="cb10-22"><a href="#cb10-22" aria-hidden="true" tabindex="-1"></a><span class="st">  &#39;&#39;</span>;</span>
+<span id="cb10-23"><a href="#cb10-23" aria-hidden="true" tabindex="-1"></a>  ...</span>
+<span id="cb10-24"><a href="#cb10-24" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+            <p>With this configuration, accesses to
+            <code>www.example.com</code> will be authenticated with HTTP
+            Basic Authentication backed by the same LDAP group-based
+            policy.</p>
+            <h1 id="wrapping-up">Wrapping Up</h1>
+            <p>After working through a fairly involved example of
+            deploying NixOS into conventional infrastructure, I’m left
+            with the impression that there’s a lot more we can do to
+            make the experience working with mundane things like LDAP
+            much better. I would love to see NixOS becoming the
+            sysadmin’s favorite distribution, as it definitely has the
+            potential to become so.</p>
+            <p><small> Thanks to __pandaman64__ for comments and
+            suggestions. </small></p>
+            <aside id="footnotes"
+            class="footnotes footnotes-end-of-document"
+            role="doc-endnotes">
+            <hr />
+            <ol>
+            <li id="fn1"><p>We either expose relevant ports via <a
+            href="https://lxd.readthedocs.io/en/latest/instances/#type-proxy">LXD
+            proxy devices</a>, or directly expose the containers to the
+            network using <a
+            href="https://lxd.readthedocs.io/en/latest/networks/#network-macvlan">macvlan</a>.
+            For the purposes of this post, you can follow along with the
+            assumption that the HTTP and HTTPS ports of the containers
+            are accessible from the Internet at
+            <code>www.example.com</code>.<a href="#fnref1"
+            class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+            <li id="fn2"><p>If you know how to fix this, please let me
+            know!<a href="#fnref2" class="footnote-back"
+            role="doc-backlink">↩︎</a></p></li>
+            </ol>
+            </aside>
+                <a href="../index.html">index</a>
+    <script src="https://utteranc.es/client.js" repo="mt-caret/blog" issue-term="pathname" theme="github-light"
+      crossorigin="anonymous" async></script>
+  </article>
+</body>
+
+</html>

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<!-- taken from https://github.com/jgm/pandoc-templates/blob/05d510b4dc5af87cbf25d92fa8318f44e155b919/default.html5 -->
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="" >
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+      <meta name="dcterms.date" content="2024-11-09" />
+      <title>Static site generation in dune</title>
+  <link rel="stylesheet" href="./static/reset.css" />
+  <link rel="stylesheet" href="./static/custom.css" />
+  <link rel="stylesheet" href="./static/highlighting.css" />
+    <!--[if lt IE 9]>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
+  <![endif]-->
+  </head>
+
+<body>
+  <div id="navigation-bar">
+    <div id="navigation-content">
+      <a href="../index.html">index</a>
+    </div>
+  </div>
+  <article>
+            <header id="title-block-header">
+      <h1 class="title">Static site generation in dune</h1>
+                        <p class="date">2024-11-09</p>
+            <!--
+            <p class="category">category: <a href="../category/uncategorized.html">uncategorized</a></p>
+                -->
+    </header>
+            <p>It’s been a while. People have suggested that I blog
+            again, so here I am. Mostly it’s been a lack of time, but
+            getting my static site generator working again was too
+            painful for me to muster the energy to write anything. Let’s
+            fix that first.</p>
+            <p><a href="https://dune.build/">Dune</a>, the build system
+            often used for OCaml projects, is pretty general, and you
+            can use it as a Makefile-on-steroids.</p>
+            <p>Here’s a simple dune rule for building a markdown file
+            into an html file:</p>
+            <pre><code>(rule
+ (deps build.sh 2024-11-09-static-site-generation-in-dune.md)
+ (targets 2024-11-09-static-site-generation-in-dune.html)
+ (action
+  (run build.sh 2024-11-09-static-site-generation-in-dune.md 2024-11-09-static-site-generation-in-dune.html)))</code></pre>
+            <p>Where <code>build.sh</code> can do whatever you want to
+            turn the markdown into html. I use pandoc for this site.
+            There’s an immediate problem with this approach. We need to
+            write one rule for every markdown file! What we want is
+            something like <a
+            href="https://accu.org/journals/overload/14/71/miller_2004/">recursive
+            Makefiles</a> to generate rules for each markdown file, but
+            for dune.</p>
+            <p>Fortunately, the dune docs have a tutorial on <a
+            href="https://dune.readthedocs.io/en/stable/howto/rule-generation.html">“rule
+            generation”</a> that walks us through doing just this.</p>
+            <p>The main dune file in our directory would look like
+            this:</p>
+            <pre><code>(include dune.inc)
+
+(rule
+ (deps
+  (source_tree .))
+ (action
+  (with-stdout-to
+   dune.inc.gen
+   (run ../gen/gen.exe))))
+
+(rule
+ (alias default)
+ (action
+  (diff dune.inc dune.inc.gen)))</code></pre>
+            <p>The idea here is that we’ll have a program-generated
+            <code>dune.inc</code> file which this <code>dune</code> file
+            will include. Whenever there is a change in the source
+            directory containing markdown files,
+            <code>../gen/gen.exe</code> will be invoked to re-generate
+            the <code>dune.inc</code> file, which will then result in a
+            diff between the old and new <code>dune.inc</code> files due
+            to the <code>(diff ...)</code> rule.</p>
+            <p><code>dune promote</code> will update the generated
+            <code>dune.inc</code> file to the new version, and
+            <code>dune build</code> will rebuild all the markdown files.
+            Using <code>dune build -w @default --auto-promote</code>
+            will automate the promotion and watch for changes.</p>
+            <p>The source for <code>gen.exe</code> looks like this:</p>
+            <div class="sourceCode" id="cb3"><pre
+            class="sourceCode ocaml"><code class="sourceCode ocaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">open</span>! Core</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="kw">let</span> generate_pragma slug =</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">print_endline</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    [%<span class="dt">string</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>      {|</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>(rule</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a> (deps build.sh %{slug}.md)</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a> (targets %{slug}.html)</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a> (action</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>  (run build.sh %{slug}.md %{slug}.html)))|}]</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>;;</span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="kw">let</span> () =</span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> source_files =</span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    Sys_unix.ls_dir <span class="st">&quot;.&quot;</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    |&gt; <span class="dt">List</span>.sort ~<span class="dt">compare</span>:<span class="dt">String</span>.<span class="dt">compare</span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    |&gt; <span class="dt">List</span>.filter_map ~f:(<span class="kw">fun</span> file -&gt; <span class="dt">String</span>.chop_suffix file ~suffix:<span class="st">&quot;.md&quot;</span>)</span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>  <span class="kw">in</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>  <span class="dt">List</span>.iter source_files ~f:generate_pragma;</span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> output_files = <span class="dt">List</span>.map source_files ~f:(<span class="kw">fun</span> file -&gt; [%<span class="dt">string</span> <span class="st">&quot;%{file}.html&quot;</span>]) <span class="kw">in</span></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>  <span class="dt">print_endline</span></span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>    [%<span class="dt">string</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>      {|</span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>(alias</span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a>  (name default)</span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>  (deps %{<span class="dt">String</span>.concat ~sep:<span class="st">&quot; &quot;</span> output_files}))</span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a>  |}]</span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a>;;</span></code></pre></div>
+            <p>We also want to generate an index page, so we’ll add an
+            rule for that:</p>
+            <pre><code>(rule
+ (deps ./index.sh (source_tree .))
+ (action
+  (with-stdout-to
+   index.html
+   (run ./index.sh))))</code></pre>
+            <!--
+            You can see the full source for this site [on
+            GitHub](https://github.com/mt-caret/blog-src).
+            -->
+                <a href="../index.html">index</a>
+    <script src="https://utteranc.es/client.js" repo="mt-caret/blog" issue-term="pathname" theme="github-light"
+      crossorigin="anonymous" async></script>
+  </article>
+</body>
+
+</html>
