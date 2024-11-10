@@ -3,3 +3,4 @@ dune.inc
 dune.inc.gen
 *.swp
 git-revision
+site_config.json

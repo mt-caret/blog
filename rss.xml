@@ -1,0 +1,1215 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>mt_caret&apos;s blog</title>
+    <link>https://mt-caret.github.io/blog</link>
+    <description><![CDATA[mt_caret's blog]]></description>
+    <atom:link href="https://mt-caret.github.io/blog" rel="self" type="application/rss+xml"/>
+    <docs>https://www.rssboard.org/rss-specification</docs>
+    <generator>blog-src</generator>
+    <item>
+      <title>Encypted Btrfs Root with Opt-in State on NixOS</title>
+      <link>https://mt-caret.github.io/blog/2020-06-29-optin-state</link>
+      <description>
+        <![CDATA[<p><a href="https://grahamc.com/blog/erase-your-darlings">grahamc’s
+“Erase your darlings” blog post</a> is an amazing example of what a
+snapshotting filesystems (zfs) combined with an immutable,
+infrastructue-as-code OS (NixOS) can achieve. To summarize the post,
+grahamc demonstrates how to erase the root partition at boot while
+opting in to state by getting NixOS to symlink stuff to a dedicated
+partition. This restores the machine to a clean state on every boot,
+preserving the “new computer smell”.</p>
+<p>I believe the main selling point of this concept of <strong>opt-in
+state</strong> is that it makes it dead simple to keep track of
+ephemeral machine state (everything not explicitly specified by your
+NixOS configuration) and enforces elimination of <a
+href="https://dzone.com/articles/configuration-drift">Configuration
+Drift</a>. While the benefits of this are clear for servers, this also
+works pretty well with workstations and laptops, where you gradually
+accumulate junk in <code>/etc</code> and <code>/var</code> which you
+never can be completely confident in deleting.<a href="#fn1"
+class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a></p>
+<p>Here are some notes on how to reproduce the setup with an encrypted<a
+href="#fn2" class="footnote-ref" id="fnref2"
+role="doc-noteref"><sup>2</sup></a> btrfs root, along with a few tips
+for a nicer laptop experience. The instructions for encrypted btrfs root
+are heavily based on <a
+href="https://jappieklooster.nl/nixos-on-encrypted-btrfs.html">this blog
+post</a>.</p>
+<h2 id="making-a-live-usb">Making a Live USB</h2>
+<p>The laptop I’m currently using is a Dell XPS-13 2-in-1 (7390) with <a
+href="https://wiki.archlinux.org/index.php/Dell_XPS_13_2-in-1_(7390)">a
+fair number of issues running on Linux</a>, some of which interferes
+with boot. Fortunately, most of these have been fixed in newer kernels,
+but the default installation ISO ships an older kernel version, so we
+need a custom ISO. Building an ISO with a custom configuration for NixOS
+is shockingly simple; following the instructions on the <a
+href="https://nixos.wiki/wiki/Creating_a_NixOS_live_CD">wiki</a>:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode nix"><code class="sourceCode nix"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># iso.nix</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">config</span><span class="op">,</span> <span class="va">pkgs</span><span class="op">,</span> <span class="op">...</span> <span class="op">}</span>:</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="va">imports</span> <span class="op">=</span> <span class="op">[</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="co"># installation-cd-graphical-plasma5-new-kernel.nix uses pkgs.linuxPackages_latest</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="co"># instead of the default kernel.</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="ss">nixpkgs/nixos/modules/installer/cd-dvd/installation-cd-graphical-plasma5-new-kernel.nix</span>&gt;</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="ss">nixpkgs/nixos/modules/installer/cd-dvd/channel.nix</span>&gt;</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>  <span class="op">];</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>  <span class="va">hardware</span>.<span class="va">enableAllFirmware</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>  <span class="va">nixpkgs</span>.<span class="va">config</span>.<span class="va">allowUnfree</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>  <span class="va">environment</span>.<span class="va">systemPackages</span> <span class="op">=</span> <span class="kw">with</span> pkgs<span class="op">;</span> <span class="op">[</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    wget</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    vim</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    git</span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    tmux</span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    gparted</span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    nix-prefetch-scripts</span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>  <span class="op">];</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The image can be built with</p>
+<pre><code>nix-build &#39;&lt;nixpkgs/nixos&gt;&#39; -A config.system.build.isoImage -I nixos-config=iso.nix</code></pre>
+<p>Then, we write the ISO to a USB stick like so:</p>
+<pre><code>sudo dd if=./result/iso/nixos-20.03....-x86_64-linux.iso of=/dev/&lt;usb device&gt; bs=1M status=progress</code></pre>
+<h2 id="nixos-installation">NixOS Installation</h2>
+<p>Once we’ve booted into a graphical session, we need to partition the
+disk. We’ll refer to the whole disk as <code>$DISK</code>
+(<code>/dev/nvme0n1</code> in my case), and we need three partitions.
+The EFI partition, swap<a href="#fn3" class="footnote-ref" id="fnref3"
+role="doc-noteref"><sup>3</sup></a>, and the rest of the disk for btrfs
+to use, which we’ll respecively refer to as <code>"$DISK"p1</code>,
+<code>"$DISK"p2</code>, and <code>"$DISK"p3</code>.</p>
+<p>Btrfs doesn’t natively support encryption, so we’ll be using <a
+href="https://wiki.archlinux.org/index.php/Dm-crypt">dm-crypt</a> to
+transparently encrypt the partition, which would be available at
+<code>/dev/mapper/enc</code> after running these commands:</p>
+<pre><code>cryptsetup --verify-passphrase -v luksFormat &quot;$DISK&quot;p3
+cryptsetup open &quot;$DISK&quot;p3 enc</code></pre>
+<p>We can then format each partition as needed:</p>
+<pre><code>mkfs.vfat -n boot &quot;$DISK&quot;p1
+mkswap &quot;$DISK&quot;p2
+swapon &quot;$DISK&quot;p2
+mkfs.btrfs /dev/mapper/enc</code></pre>
+<p>Now we have a btrfs volume, we need to decide on how to structure our
+subvolumes. We want to split our data into a number of subvolumes to
+keep track of a few things:</p>
+<ul>
+<li>root: The subvolume for <code>/</code>, which will be cleared on
+every boot.</li>
+<li>home: The subvolume for <code>/home</code>, which should be backed
+up.</li>
+<li>nix: The subvolume for <code>/nix</code>, which needs to be
+persistent but is not worth backing up, as it’s trivial to
+reconstruct.</li>
+<li>persist: The subvolume for <code>/persist</code>, containing system
+state which should be persistent across reboots and possibly backed
+up.</li>
+<li>log: The subvolume for <code>/var/log</code>. I’m not so interested
+in backing up logs but I want them to be preserved across reboots, so
+I’m dedicating a subvolume to logs rather than using the persist
+subvolume.</li>
+</ul>
+<p>Somewhat arbitrarily, we’ll go with the <a
+href="https://btrfs.wiki.kernel.org/index.php/SysadminGuide#Flat">“Flat”
+layout as described in the btrfs wiki</a>, and create our subvolumes
+accordingly.</p>
+<pre><code>mount -t btrfs /dev/mapper/enc /mnt
+
+# We first create the subvolumes outlined above:
+btrfs subvolume create /mnt/root
+btrfs subvolume create /mnt/home
+btrfs subvolume create /mnt/nix
+btrfs subvolume create /mnt/persist
+btrfs subvolume create /mnt/log
+
+# We then take an empty *readonly* snapshot of the root subvolume,
+# which we&#39;ll eventually rollback to on every boot.
+btrfs subvolume snapshot -r /mnt/root /mnt/root-blank
+
+umount /mnt</code></pre>
+<p>Once we’ve created the subvolumes, we mount them with the options
+that we want. Here, we’re using <a
+href="https://facebook.github.io/zstd/">Zstandard compression</a> along
+with the <code>noatime</code> option.</p>
+<pre><code>mount -o subvol=root,compress=zstd,noatime /dev/mapper/enc /mnt
+
+mkdir /mnt/home
+mount -o subvol=home,compress=zstd,noatime /dev/mapper/enc /mnt/home
+
+mkdir /mnt/nix
+mount -o subvol=nix,compress=zstd,noatime /dev/mapper/enc /mnt/nix
+
+mkdir /mnt/persist
+mount -o subvol=persist,compress=zstd,noatime /dev/mapper/enc /mnt/persist
+
+mkdir -p /mnt/var/log
+mount -o subvol=log,compress=zstd,noatime /dev/mapper/enc /mnt/var/log
+
+# don&#39;t forget this!
+mkdir /mnt/boot
+mount &quot;$DISK&quot;p1 /mnt/boot</code></pre>
+<p>Then, let NixOS figure out the config.</p>
+<pre><code>nixos-generate-config --root /mnt</code></pre>
+<p>This should result with
+<code>/mnt/etc/nixos/hardware-configuration.nix</code> looking something
+like this:</p>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode nix"><code class="sourceCode nix"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Do not modify this file!  It was generated by ‘nixos-generate-config’</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="co"># and may be overwritten by future invocations.  Please make changes</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="co"># to /etc/nixos/configuration.nix instead.</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">config</span><span class="op">,</span> <span class="va">lib</span><span class="op">,</span> <span class="va">pkgs</span><span class="op">,</span> <span class="op">...</span> <span class="op">}</span>:</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>  <span class="va">imports</span> <span class="op">=</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>    <span class="op">[</span> &lt;<span class="ss">nixpkgs/nixos/modules/installer/scan/not-detected.nix</span>&gt;</span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>    <span class="op">];</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>  <span class="va">boot</span>.<span class="va">initrd</span>.<span class="va">availableKernelModules</span> <span class="op">=</span> <span class="op">[</span> <span class="st">&quot;xhci_pci&quot;</span> <span class="st">&quot;nvme&quot;</span> <span class="st">&quot;usb_storage&quot;</span> <span class="st">&quot;sd_mod&quot;</span> <span class="st">&quot;rtsx_pci_sdmmc&quot;</span> <span class="op">];</span></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>  <span class="va">boot</span>.<span class="va">initrd</span>.<span class="va">kernelModules</span> <span class="op">=</span> <span class="op">[</span> <span class="op">];</span></span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>  <span class="va">boot</span>.<span class="va">kernelModules</span> <span class="op">=</span> <span class="op">[</span> <span class="st">&quot;kvm-intel&quot;</span> <span class="op">];</span></span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>  <span class="va">boot</span>.<span class="va">extraModulePackages</span> <span class="op">=</span> <span class="op">[</span> <span class="op">];</span></span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>  <span class="va">fileSystems</span>.<span class="st">&quot;/&quot;</span> <span class="op">=</span></span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span> <span class="va">device</span> <span class="op">=</span> <span class="st">&quot;/dev/disk/by-uuid/f73c53b7-ae6c-4240-89c3-511ad918edcc&quot;</span><span class="op">;</span></span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>      <span class="va">fsType</span> <span class="op">=</span> <span class="st">&quot;btrfs&quot;</span><span class="op">;</span></span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>      <span class="va">options</span> <span class="op">=</span> <span class="op">[</span> <span class="st">&quot;subvol=root&quot;</span> <span class="st">&quot;compress=zstd&quot;</span> <span class="st">&quot;noatime&quot;</span> <span class="op">];</span></span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a>  <span class="va">boot</span>.<span class="va">initrd</span>.<span class="va">luks</span>.<span class="va">devices</span>.<span class="st">&quot;enc&quot;</span>.<span class="va">device</span> <span class="op">=</span> <span class="st">&quot;/dev/disk/by-uuid/050db9bf-0741-4150-8cf8-d6ec12735d4c&quot;</span><span class="op">;</span></span>
+<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a>  <span class="va">fileSystems</span>.<span class="st">&quot;/home&quot;</span> <span class="op">=</span></span>
+<span id="cb9-25"><a href="#cb9-25" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span> <span class="va">device</span> <span class="op">=</span> <span class="st">&quot;/dev/disk/by-uuid/f73c53b7-ae6c-4240-89c3-511ad918edcc&quot;</span><span class="op">;</span></span>
+<span id="cb9-26"><a href="#cb9-26" aria-hidden="true" tabindex="-1"></a>      <span class="va">fsType</span> <span class="op">=</span> <span class="st">&quot;btrfs&quot;</span><span class="op">;</span></span>
+<span id="cb9-27"><a href="#cb9-27" aria-hidden="true" tabindex="-1"></a>      <span class="va">options</span> <span class="op">=</span> <span class="op">[</span> <span class="st">&quot;subvol=home&quot;</span> <span class="st">&quot;compress=zstd&quot;</span> <span class="st">&quot;noatime&quot;</span> <span class="op">];</span></span>
+<span id="cb9-28"><a href="#cb9-28" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
+<span id="cb9-29"><a href="#cb9-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-30"><a href="#cb9-30" aria-hidden="true" tabindex="-1"></a>  <span class="va">fileSystems</span>.<span class="st">&quot;/nix&quot;</span> <span class="op">=</span></span>
+<span id="cb9-31"><a href="#cb9-31" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span> <span class="va">device</span> <span class="op">=</span> <span class="st">&quot;/dev/disk/by-uuid/f73c53b7-ae6c-4240-89c3-511ad918edcc&quot;</span><span class="op">;</span></span>
+<span id="cb9-32"><a href="#cb9-32" aria-hidden="true" tabindex="-1"></a>      <span class="va">fsType</span> <span class="op">=</span> <span class="st">&quot;btrfs&quot;</span><span class="op">;</span></span>
+<span id="cb9-33"><a href="#cb9-33" aria-hidden="true" tabindex="-1"></a>      <span class="va">options</span> <span class="op">=</span> <span class="op">[</span> <span class="st">&quot;subvol=nix&quot;</span> <span class="st">&quot;compress=zstd&quot;</span> <span class="st">&quot;noatime&quot;</span> <span class="op">];</span></span>
+<span id="cb9-34"><a href="#cb9-34" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
+<span id="cb9-35"><a href="#cb9-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-36"><a href="#cb9-36" aria-hidden="true" tabindex="-1"></a>  <span class="va">fileSystems</span>.<span class="st">&quot;/var/log&quot;</span> <span class="op">=</span></span>
+<span id="cb9-37"><a href="#cb9-37" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span> <span class="va">device</span> <span class="op">=</span> <span class="st">&quot;/dev/disk/by-uuid/f73c53b7-ae6c-4240-89c3-511ad918edcc&quot;</span><span class="op">;</span></span>
+<span id="cb9-38"><a href="#cb9-38" aria-hidden="true" tabindex="-1"></a>      <span class="va">fsType</span> <span class="op">=</span> <span class="st">&quot;btrfs&quot;</span><span class="op">;</span></span>
+<span id="cb9-39"><a href="#cb9-39" aria-hidden="true" tabindex="-1"></a>      <span class="va">options</span> <span class="op">=</span> <span class="op">[</span> <span class="st">&quot;subvol=log&quot;</span> <span class="st">&quot;compress=zstd&quot;</span> <span class="st">&quot;noatime&quot;</span> <span class="op">];</span></span>
+<span id="cb9-40"><a href="#cb9-40" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
+<span id="cb9-41"><a href="#cb9-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-42"><a href="#cb9-42" aria-hidden="true" tabindex="-1"></a>  <span class="va">fileSystems</span>.<span class="st">&quot;/persist&quot;</span> <span class="op">=</span></span>
+<span id="cb9-43"><a href="#cb9-43" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span> <span class="va">device</span> <span class="op">=</span> <span class="st">&quot;/dev/disk/by-uuid/f73c53b7-ae6c-4240-89c3-511ad918edcc&quot;</span><span class="op">;</span></span>
+<span id="cb9-44"><a href="#cb9-44" aria-hidden="true" tabindex="-1"></a>      <span class="va">fsType</span> <span class="op">=</span> <span class="st">&quot;btrfs&quot;</span><span class="op">;</span></span>
+<span id="cb9-45"><a href="#cb9-45" aria-hidden="true" tabindex="-1"></a>      <span class="va">options</span> <span class="op">=</span> <span class="op">[</span> <span class="st">&quot;subvol=persist&quot;</span> <span class="st">&quot;compress=zstd&quot;</span> <span class="st">&quot;noatime&quot;</span> <span class="op">];</span></span>
+<span id="cb9-46"><a href="#cb9-46" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
+<span id="cb9-47"><a href="#cb9-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-48"><a href="#cb9-48" aria-hidden="true" tabindex="-1"></a>  <span class="va">fileSystems</span>.<span class="st">&quot;/boot&quot;</span> <span class="op">=</span></span>
+<span id="cb9-49"><a href="#cb9-49" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span> <span class="va">device</span> <span class="op">=</span> <span class="st">&quot;/dev/disk/by-uuid/8CE7-3C76&quot;</span><span class="op">;</span></span>
+<span id="cb9-50"><a href="#cb9-50" aria-hidden="true" tabindex="-1"></a>      <span class="va">fsType</span> <span class="op">=</span> <span class="st">&quot;vfat&quot;</span><span class="op">;</span></span>
+<span id="cb9-51"><a href="#cb9-51" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
+<span id="cb9-52"><a href="#cb9-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-53"><a href="#cb9-53" aria-hidden="true" tabindex="-1"></a>  <span class="va">swapDevices</span> <span class="op">=</span></span>
+<span id="cb9-54"><a href="#cb9-54" aria-hidden="true" tabindex="-1"></a>    <span class="op">[</span> <span class="op">{</span> <span class="va">device</span> <span class="op">=</span> <span class="st">&quot;/dev/disk/by-uuid/5b1b6659-14ab-497f-a788-5518c25e7ec8&quot;</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb9-55"><a href="#cb9-55" aria-hidden="true" tabindex="-1"></a>    <span class="op">];</span></span>
+<span id="cb9-56"><a href="#cb9-56" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-57"><a href="#cb9-57" aria-hidden="true" tabindex="-1"></a>  <span class="va">nix</span>.<span class="va">maxJobs</span> <span class="op">=</span> lib.mkDefault <span class="dv">8</span><span class="op">;</span></span>
+<span id="cb9-58"><a href="#cb9-58" aria-hidden="true" tabindex="-1"></a>  <span class="va">powerManagement</span>.<span class="va">cpuFreqGovernor</span> <span class="op">=</span> lib.mkDefault <span class="st">&quot;powersave&quot;</span><span class="op">;</span></span>
+<span id="cb9-59"><a href="#cb9-59" aria-hidden="true" tabindex="-1"></a>  <span class="co"># High-DPI console</span></span>
+<span id="cb9-60"><a href="#cb9-60" aria-hidden="true" tabindex="-1"></a>  <span class="va">console</span>.<span class="va">font</span> <span class="op">=</span> lib.mkDefault <span class="st">&quot;</span><span class="sc">${</span>pkgs.terminus_font<span class="sc">}</span><span class="st">/share/consolefonts/ter-u28n.psf.gz&quot;</span><span class="op">;</span></span>
+<span id="cb9-61"><a href="#cb9-61" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Make sure that this is what you want, and adjust options as
+necessary. Note that in order to correctly persist
+<code>/var/log</code>, the log subvolume needs to be mounted early
+enough in the boot process. To do this, we need to add
+<code>neededForBoot = true;</code> so the entry will look like this:</p>
+<div class="sourceCode" id="cb10"><pre
+class="sourceCode nix"><code class="sourceCode nix"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>  fileSystems.<span class="st">&quot;/var/log&quot;</span> =</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span> <span class="va">device</span> <span class="op">=</span> <span class="st">&quot;/dev/disk/by-uuid/f73c53b7-ae6c-4240-89c3-511ad918edcc&quot;</span><span class="op">;</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>      <span class="va">fsType</span> <span class="op">=</span> <span class="st">&quot;btrfs&quot;</span><span class="op">;</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>      <span class="va">options</span> <span class="op">=</span> <span class="op">[</span> <span class="st">&quot;subvol=log&quot;</span> <span class="st">&quot;compress=zstd&quot;</span> <span class="st">&quot;noatime&quot;</span> <span class="op">];</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>      <span class="va">neededForBoot</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span>;</span></code></pre></div>
+<p>Although it’s possible to customize
+<code>/etc/nixos/configuration.nix</code> at this point to set up all
+the things you need in one fell swoop, I recommend starting out with a
+reletively minimal config to make sure everything works ok. I went with
+something like this, with a user called <code>delta</code>:</p>
+<div class="sourceCode" id="cb11"><pre
+class="sourceCode nix"><code class="sourceCode nix"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">config</span><span class="op">,</span> <span class="va">pkgs</span><span class="op">,</span> <span class="op">...</span> <span class="op">}</span>:</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>  <span class="va">imports</span> <span class="op">=</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">[</span> <span class="co"># Include the results of the hardware scan.</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>      <span class="ss">./hardware-configuration.nix</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">];</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>  <span class="va">boot</span>.<span class="va">kernelPackages</span> <span class="op">=</span> pkgs.linuxPackages_latest<span class="op">;</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>  <span class="va">boot</span>.<span class="va">supportedFilesystems</span> <span class="op">=</span> <span class="op">[</span> <span class="st">&quot;btrfs&quot;</span> <span class="op">];</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>  <span class="va">hardware</span>.<span class="va">enableAllFirmware</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>  <span class="va">nixpkgs</span>.<span class="va">config</span>.<span class="va">allowUnfree</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Use the systemd-boot EFI boot loader.</span></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>  <span class="va">boot</span>.<span class="va">loader</span>.<span class="va">systemd-boot</span>.<span class="va">enable</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a>  <span class="va">boot</span>.<span class="va">loader</span>.<span class="va">efi</span>.<span class="va">canTouchEfiVariables</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a>  <span class="va">networking</span>.<span class="va">hostName</span> <span class="op">=</span> <span class="st">&quot;apollo&quot;</span><span class="op">;</span> <span class="co"># Define your hostname.</span></span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a>  <span class="va">networking</span>.<span class="va">networkmanager</span>.<span class="va">enable</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Enable the X11 windowing system.</span></span>
+<span id="cb11-21"><a href="#cb11-21" aria-hidden="true" tabindex="-1"></a>  <span class="va">services</span>.<span class="va">xserver</span>.<span class="va">enable</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb11-22"><a href="#cb11-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-23"><a href="#cb11-23" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Enable the KDE Desktop Environment.</span></span>
+<span id="cb11-24"><a href="#cb11-24" aria-hidden="true" tabindex="-1"></a>  <span class="va">services</span>.<span class="va">xserver</span>.<span class="va">displayManager</span>.<span class="va">sddm</span>.<span class="va">enable</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb11-25"><a href="#cb11-25" aria-hidden="true" tabindex="-1"></a>  <span class="va">services</span>.<span class="va">xserver</span>.<span class="va">desktopManager</span>.<span class="va">plasma5</span>.<span class="va">enable</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb11-26"><a href="#cb11-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-27"><a href="#cb11-27" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Define a user account. Don&#39;t forget to set a password with ‘passwd’.</span></span>
+<span id="cb11-28"><a href="#cb11-28" aria-hidden="true" tabindex="-1"></a>  <span class="va">users</span>.<span class="va">users</span>.<span class="va">delta</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb11-29"><a href="#cb11-29" aria-hidden="true" tabindex="-1"></a>    <span class="va">isNormalUser</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb11-30"><a href="#cb11-30" aria-hidden="true" tabindex="-1"></a>    <span class="va">extraGroups</span> <span class="op">=</span> <span class="op">[</span> <span class="st">&quot;wheel&quot;</span> <span class="op">];</span> <span class="co"># Enable ‘sudo’ for the user.</span></span>
+<span id="cb11-31"><a href="#cb11-31" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb11-32"><a href="#cb11-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-33"><a href="#cb11-33" aria-hidden="true" tabindex="-1"></a>  <span class="va">system</span>.<span class="va">stateVersion</span> <span class="op">=</span> <span class="st">&quot;20.03&quot;</span><span class="op">;</span></span>
+<span id="cb11-34"><a href="#cb11-34" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Take a deep breath.</p>
+<pre><code>nixos-install
+reboot</code></pre>
+<p>If all goes well, we’ll be prompted for the passphrase for
+<code>$DISK</code> entered earlier, then we’ll see the greeter for the
+KDE Desktop Environment. Swith to another tty with
+<code>Ctrl+Alt+F1</code>, login as root, <code>passwd delta</code> to
+set your password, and switch back to KDE with <code>Ctrl+Alt+F7</code>.
+Once you’re logged in, you can continue to tweak your NixOS
+configuration as you want. However, I generally recommend keeping
+enabled services at a minimum, and setting up opt-in state first.</p>
+<h1 id="darling-erasure">Darling Erasure</h1>
+<p>Now that we’re comfortable in our desktop environment of choice (mine
+is XMonad), we can move onto the opt-in state setup. First, we need to
+find out what state exists in the first place. Seeing what has changed
+since we took the blank snapshot seems like a good way to do this.</p>
+<p>Taking a diff between the root subvolume and the root-blank subvolume
+(in btrfs, snapshots are just subvolumes) can be done with a script
+based off of the answers to <a
+href="https://serverfault.com/questions/399894/does-btrfs-have-an-efficient-way-to-compare-snapshots">this
+serverfault question</a>.</p>
+<pre><code>#!/usr/bin/env bash
+# fs-diff.sh
+set -euo pipefail
+
+OLD_TRANSID=$(sudo btrfs subvolume find-new /mnt/root-blank 9999999)
+OLD_TRANSID=${OLD_TRANSID#transid marker was }
+
+sudo btrfs subvolume find-new &quot;/mnt/root&quot; &quot;$OLD_TRANSID&quot; |
+sed &#39;$d&#39; |
+cut -f17- -d&#39; &#39; |
+sort |
+uniq |
+while read path; do
+  path=&quot;/$path&quot;
+  if [ -L &quot;$path&quot; ]; then
+    : # The path is a symbolic link, so is probably handled by NixOS already
+  elif [ -d &quot;$path&quot; ]; then
+    : # The path is a directory, ignore
+  else
+    echo &quot;$path&quot;
+  fi
+done</code></pre>
+<p>Then, all it takes to find out which files now exist in the root
+subvolume is:</p>
+<pre><code>sudo mkdir /mnt
+sudo mount -o subvol=/ /dev/mapper/enc /mnt
+./fs-diff.sh</code></pre>
+<p>This may show a surprisingly small list of files, or possible
+something fairly lengthy, depending on your configuration. We’ll first
+tackle NetworkManager, so we don’t have to re-type passwords to Wi-Fi
+access points after every reboot. While <a
+href="https://grahamc.com/blog/erase-your-darlings">grahamc’s original
+blog post</a> suggests that simply persisting
+<code>/etc/NetworkManager/system-connections</code> by moving it to
+somewhere in <code>/persist</code> and creating a symlink is enough,
+this was not enough to get it to work on my XMonad setup. I ended up
+with something like this, symlinking a few files in
+<code>/var/lib/NetworkManager</code> as well.</p>
+<pre><code>  environment.etc = {
+    &quot;NetworkManager/system-connections&quot;.source = &quot;/persist/etc/NetworkManager/system-connections&quot;;
+  };
+  systemd.tmpfiles.rules = [
+    &quot;L /var/lib/NetworkManager/secret_key - - - - /persist/var/lib/NetworkManager/secret_key&quot;
+    &quot;L /var/lib/NetworkManager/seen-bssids - - - - /persist/var/lib/NetworkManager/seen-bssids&quot;
+    &quot;L /var/lib/NetworkManager/timestamps - - - - /persist/var/lib/NetworkManager/timestamps&quot;
+  ];</code></pre>
+<p>Now you might have noticed that the NixOS configuration itself lives
+in <code>/etc/nixos/</code>, which will be deleted if left there. After
+adding a few things, I ended up with a configuration like this.</p>
+<pre><code> environment.etc = {
+    nixos.source = &quot;/persist/etc/nixos&quot;;
+    &quot;NetworkManager/system-connections&quot;.source = &quot;/persist/etc/NetworkManager/system-connections&quot;;
+    adjtime.source = &quot;/persist/etc/adjtime&quot;;
+    NIXOS.source = &quot;/persist/etc/NIXOS&quot;;
+    machine-id.source = &quot;/persist/etc/machine-id&quot;;
+  };
+  systemd.tmpfiles.rules = [
+    &quot;L /var/lib/NetworkManager/secret_key - - - - /persist/var/lib/NetworkManager/secret_key&quot;
+    &quot;L /var/lib/NetworkManager/seen-bssids - - - - /persist/var/lib/NetworkManager/seen-bssids&quot;
+    &quot;L /var/lib/NetworkManager/timestamps - - - - /persist/var/lib/NetworkManager/timestamps&quot;
+  ];
+  security.sudo.extraConfig = &#39;&#39;
+    # rollback results in sudo lectures after each reboot
+    Defaults lecture = never
+  &#39;&#39;;</code></pre>
+<p>Rolling back the root subvolume is a little bit involved when
+compared to zfs, but can be achieved with this config.</p>
+<pre><code>  # Note `lib.mkBefore` is used instead of `lib.mkAfter` here.
+  boot.initrd.postDeviceCommands = pkgs.lib.mkBefore &#39;&#39;
+    mkdir -p /mnt
+
+    # We first mount the btrfs root to /mnt
+    # so we can manipulate btrfs subvolumes.
+    mount -o subvol=/ /dev/mapper/enc /mnt
+
+    # While we&#39;re tempted to just delete /root and create
+    # a new snapshot from /root-blank, /root is already
+    # populated at this point with a number of subvolumes,
+    # which makes `btrfs subvolume delete` fail.
+    # So, we remove them first.
+    #
+    # /root contains subvolumes:
+    # - /root/var/lib/portables
+    # - /root/var/lib/machines
+    #
+    # I suspect these are related to systemd-nspawn, but
+    # since I don&#39;t use it I&#39;m not 100% sure.
+    # Anyhow, deleting these subvolumes hasn&#39;t resulted
+    # in any issues so far, except for fairly
+    # benign-looking errors from systemd-tmpfiles.
+    btrfs subvolume list -o /mnt/root |
+    cut -f9 -d&#39; &#39; |
+    while read subvolume; do
+      echo &quot;deleting /$subvolume subvolume...&quot;
+      btrfs subvolume delete &quot;/mnt/$subvolume&quot;
+    done &amp;&amp;
+    echo &quot;deleting /root subvolume...&quot; &amp;&amp;
+    btrfs subvolume delete /mnt/root
+
+    echo &quot;restoring blank /root subvolume...&quot;
+    btrfs subvolume snapshot /mnt/root-blank /mnt/root
+
+    # Once we&#39;re done rolling back to a blank snapshot,
+    # we can unmount /mnt and continue on the boot process.
+    umount /mnt
+  &#39;&#39;;</code></pre>
+<p>While NixOS will take care of creating the specified symlinks, we
+need to move the relevant file and directories to where the symlinks are
+pointing at after running <code>sudo nixos-rebuild boot</code> and
+before rebooting.</p>
+<pre><code>sudo nixos-rebuild boot
+
+sudo mkdir -p /persist/etc/NetworkManager
+sudo cp -r {,/persist}/etc/NetworkManager/system-connections
+sudo mkdir -p /persist/var/lib/NetworkManager
+sudo cp /var/lib/NetworkManager/{secret_key,seen-bssids,timestamps} /persist/var/lib/NetworkManager/
+
+sudo cp {,/persist}/etc/nixos
+sudo cp {,/persist}/etc/adjtime
+sudo cp {,/persist}/etc/NIXOS</code></pre>
+<p>Before rebooting, make sure that your user credentials are
+appropriately handled. Be especially careful<a href="#fn4"
+class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a>
+when setting <code>users.mutableUsers</code> to false and using
+<code>users.extraUsers.&lt;name?&gt;.passwordFile</code>, as these
+settings are some of the few in NixOS which can lock you out across
+NixOS configurations and require non-trivial recovery work or a
+reinstall. If you want declerative user management, I recommend using
+<code>users.extraUsers.&lt;name?&gt;.hashedPasswords</code>, but this
+has it’s own downsides as well.<a href="#fn5" class="footnote-ref"
+id="fnref5" role="doc-noteref"><sup>5</sup></a></p>
+<p>Take another deep breath.</p>
+<pre><code>reboot</code></pre>
+<p>If something goes wrong and <code>/mnt/root</code> isn’t deleted,
+<code>btrfs subvolume snapshot /mnt/root-blank /mnt/root</code> will
+just create a snapshot under <code>/mnt/root</code>, so a quick hack to
+check if rolling back failed without consulting
+<code>journalctl -b</code> is to see if
+<code>/mnt/root/root-blank</code> exists.<a href="#fn6"
+class="footnote-ref" id="fnref6" role="doc-noteref"><sup>6</sup></a></p>
+<h1 id="adding-nixos-services-case-study-docker-and-lxd">Adding NixOS
+Services Case Study (Docker and LXD)</h1>
+<p>As much as Nix and NixOS are attractive for everyday use, sometimes
+the time it takes to get some language or package running on NixOS just
+doesn’t seem worth it. That’s when container runtimes like Docker and
+LXD can help. These tools can act as an escape hatch to get some
+software working quickly on your machine.</p>
+<p>Here, we’ll go through the workflow for getting NixOS services to
+work with opt-in state, with Docker and LXD as examples.</p>
+<p>First, let’s get Docker and LXD running to inspect what kind of state
+they have. Thanks to NixOS, this is a just a few lines of
+configuration.</p>
+<pre><code>  virtualisation = {
+     docker.enable = true;
+    lxd = {
+      enable = true;
+      recommendedSysctlSettings = true;
+    };
+  };</code></pre>
+<pre><code>sudo nixos-rebuild switch</code></pre>
+<p>This will install, set up, and start both Docker and LXD on our
+machine. With <code>fs-diff.sh</code> we can see a few relevant files
+and directories show up.</p>
+<pre><code>/etc/docker/key.json
+...
+/var/lib/docker/...
+/var/lib/lxd/...</code></pre>
+<p>Some quick googling tells us that <code>/etc/docker/key.json</code>
+is generated on every boot, so it seems like we don’t need to keep this
+around. On the other hand, <code>/var/lib/docker</code> and
+<code>/var/lib/lxd</code> seem important, so let’s adjust our config
+accordingly.</p>
+<pre><code>  systemd.tmpfiles.rules = [
+    &quot;L /var/lib/NetworkManager/secret_key - - - - /persist/var/lib/NetworkManager/secret_key&quot;
+    &quot;L /var/lib/NetworkManager/seen-bssids - - - - /persist/var/lib/NetworkManager/seen-bssids&quot;
+    &quot;L /var/lib/NetworkManager/timestamps - - - - /persist/var/lib/NetworkManager/timestamps&quot;
+    &quot;L /var/lib/lxd - - - - /persist/var/lib/lxd&quot;
+    &quot;L /var/lib/docker - - - - /persist/var/lib/docker&quot;
+  ];</code></pre>
+<p>Now, stop the two services and copy over the directories.</p>
+<pre><code>sudo mkdir -p /persist/var/lib/
+
+sudo systemctl stop lxd
+sudo cp -r {,/persist}/var/lib/lxd
+
+sudo systemctl stop docker
+sudo cp -r {,/persist}/var/lib/docker
+
+sudo nixos-rebuild boot
+reboot</code></pre>
+<p>If all goes well, running the <code>fs-diff.sh</code> after reboot
+shouldn’t show persisted directories <code>/var/lib/lxd</code> and
+<code>/var/lib/docker</code> since they should be symlinks which are
+created during the boot process.</p>
+<p>Docker should work without any problems at this point, but we LXD
+needs some additional configuration. LXD requires a storage pool to
+operate, so we create a subvolume for LXD, and mount it in
+<code>/persist</code>.</p>
+<pre><code>sudo mount -o subvol=/ /mnt
+sudo btrfs subvolume create /mnt/lxd
+sudo umount /mnt
+sudo mkdir /persist/lxd
+sudo mount -o subvol=lxd /dev/mapper/enc /persist/lxd</code></pre>
+<p>Once the subvolume is ready, we run <code>lxd init</code> and answer
+the questions in the following manner.</p>
+<pre><code>$ lxd init
+Would you like to use LXD clustering? (yes/no) [default=no]: no
+Do you want to configure a new storage pool? (yes/no) [default=yes]:
+Name of the new storage pool [default=default]:
+Name of the storage backend to use (btrfs, dir, lvm) [default=btrfs]:
+Would you like to create a new btrfs subvolume under /var/lib/lxd? (yes/no) [default=yes]: no
+Create a new BTRFS pool? (yes/no) [default=yes]: no
+Name of the existing BTRFS pool or dataset: /persist/lxd
+Would you like to connect to a MAAS server? (yes/no) [default=no]:
+Would you like to create a new local network bridge? (yes/no) [default=yes]:
+What should the new bridge be called? [default=lxdbr0]:
+What IPv4 address should be used? (CIDR subnet notation, “auto” or “none”) [default=auto]:
+What IPv6 address should be used? (CIDR subnet notation, “auto” or “none”) [default=auto]:
+Would you like LXD to be available over the network? (yes/no) [default=no]:
+Would you like stale cached images to be updated automatically? (yes/no) [default=yes]
+Would you like a YAML &quot;lxd init&quot; preseed to be printed? (yes/no) [default=no]:</code></pre>
+<p>Remember to add the relevant information to
+<code>/etc/nixos/hardware-configuration.nix</code> so NixOS will mount
+the subvolume where LXD expects (i.e. <code>/persist/lxd</code>).</p>
+<pre><code>  fileSystems.&quot;/persist/lxd&quot; =
+    { device = &quot;/dev/disk/by-uuid/f73c53b7-ae6c-4240-89c3-511ad918edcc&quot;;
+      fsType = &quot;btrfs&quot;;
+      options = [ &quot;subvol=lxd&quot; &quot;compress=zstd&quot; &quot;noatime&quot; ];
+    };</code></pre>
+<p>EDIT 2020-01-26: Added persistence for <code>/etc/machine-id</code>,
+which fixes an issue where journalctl fails to find logs from past
+boots, among various others. Thanks j-hui for pointing this out!</p>
+<p><small> Thanks to cannorin and __pandaman64__ for comments and
+suggestions. </small></p>
+<aside id="footnotes" class="footnotes footnotes-end-of-document"
+role="doc-endnotes">
+<hr />
+<ol>
+<li id="fn1"><p>When using a Windows or macOS laptop, I find myself
+reinstalling the OS every so often to restore the machine to a clean
+state. Why go through this trouble if you can get your OS to do this on
+every boot?<a href="#fnref1" class="footnote-back"
+role="doc-backlink">↩︎</a></p></li>
+<li id="fn2"><p>Sadly, we stop short of FDE and settle for only
+encrypting the btrfs volume, as encrypting <code>/boot</code> seems <a
+href="https://elvishjerricco.github.io/2018/12/06/encrypted-boot-on-zfs-with-nixos.html">much
+more complicated</a> than I’m willing to experiment with. It’s
+unfortunate that desktop Linux security severely lags behind
+smartphones, where FDE is the norm rather than the exception, for
+example.<a href="#fnref2" class="footnote-back"
+role="doc-backlink">↩︎</a></p></li>
+<li id="fn3"><p>Note that I’m creating a swap partition despite having
+32GB of RAM. Contrary to popular belief, you should still create swap
+partitions on systems with “enough RAM”. See this blog post for details:
+<a href="https://chrisdown.name/2018/01/02/in-defence-of-swap.html">In
+defence of swap: common misconceptions</a><a href="#fnref3"
+class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn4"><p><a
+href="https://github.com/NixOS/nixpkgs/issues/4990#issuecomment-63238644">You
+may need to add <code>neededForBoot = true;</code> to
+<code>/persist</code></a>, but I haven’t verified this first-hand.<a
+href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn5"><p>Using <code>hashedPasswords</code> has two drawbacks off
+the top of my head:</p>
+<ul>
+<li>Since your configuration is kept in the Nix store, other users can
+read your hashed password and attempt to crack it. Note this does not
+happen when <code>users.mutableUsers = false;</code> since
+<code>/etc/shadow</code> is only root-readable.</li>
+<li>Putting your configuration.nix in a public repository has similar
+problems. I feel this is a bigger problem, since you can no longer just
+<code>git clone https://github.com/user/dotfiles-repo</code> which may
+somewhat complicate your initial setup process.</li>
+</ul>
+<a href="#fnref5" class="footnote-back" role="doc-backlink">↩︎</a></li>
+<li id="fn6"><p>Something like
+<code>[ -d /root-blank ] &amp;&amp; notify-send -u critical "opt-in state" "rollback failed"</code>
+would be nice to run after logging in.<a href="#fnref6"
+class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</aside>]]>
+      </description>
+      <pubDate>Mon, 29 Jun 2020 00:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Setting up LDAP Authentication with NixOS</title>
+      <link>https://mt-caret.github.io/blog/2020-07-25-ldap-client-with-nixos</link>
+      <description>
+        <![CDATA[<p>At work, we manage an OpenLDAP server that handles authentication and
+authorization for various services that we provide. All machines run
+Ubuntu with individual service being containerized and run in LXD. I was
+interested in testing some open source projects out to integrate into
+our infrastructure.</p>
+<p>However, finding out the convoluted installation instructions for
+software on Ubuntu and turning it into a provisioning script is always a
+bit of a pain, so I decided to use NixOS this time to quickly try it
+out. The requirements were fairly involved, though.</p>
+<ul>
+<li>The service needs to run containerized on LXD</li>
+<li><em>Only</em> the users in the <code>admin</code> LDAP group should
+be able to
+<ul>
+<li>ssh in, with automatic home directory creation</li>
+<li>access a web interface via HTTPS<a href="#fn1" class="footnote-ref"
+id="fnref1" role="doc-noteref"><sup>1</sup></a></li>
+</ul></li>
+</ul>
+<p>I’ll go through the steps I took to meet each requirement, one by
+one.</p>
+<h1 id="setting-up-a-nixos-lxd-container">Setting up a NixOS LXD
+container</h1>
+<p>(If you’re not interested in LXD, you can just skip to <a
+href="#ldap-authentication">LDAP Authentication</a>)</p>
+<p>Thanks to <a
+href="https://github.com/nix-community/nixos-generators">nix-community/nixos-generators</a>,
+this is <a href="https://www.srid.ca/2012301.html">pretty
+straightforward</a>. First, we want to start off with a configuration
+that’s similar to that found in Ubuntu LXD images:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode nix"><code class="sourceCode nix"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># configuration.nix</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">config</span><span class="op">,</span> <span class="va">pkgs</span><span class="op">,</span> <span class="op">...</span> <span class="op">}</span>:</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="co"># https://github.com/NixOS/nixpkgs/issues/9735#issuecomment-500164017</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="va">systemd</span>.<span class="va">services</span>.<span class="st">&quot;</span>console-getty<span class="st">&quot;</span>.<span class="va">enable</span> <span class="op">=</span> <span class="cn">false</span><span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="va">systemd</span>.<span class="va">services</span>.<span class="st">&quot;getty@&quot;</span>.<span class="va">enable</span> <span class="op">=</span> <span class="cn">false</span><span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>  <span class="va">imports</span> <span class="op">=</span> <span class="op">[</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="ss">nixpkgs/nixos/modules/virtualisation/lxc-container.nix</span>&gt;</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>  <span class="op">];</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>  <span class="va">networking</span>.<span class="va">hostName</span> <span class="op">=</span> <span class="st">&quot;nixos&quot;</span><span class="op">;</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>  <span class="va">services</span>.<span class="va">openssh</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    <span class="va">enable</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="va">permitRootLogin</span> <span class="op">=</span> <span class="st">&quot;no&quot;</span><span class="op">;</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>  <span class="va">users</span>.<span class="va">users</span>.<span class="va">nixos</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    <span class="va">isNormalUser</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    <span class="va">extraGroups</span> <span class="op">=</span> <span class="op">[</span> <span class="st">&quot;wheel&quot;</span> <span class="op">];</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>  <span class="va">security</span>.<span class="va">sudo</span>.<span class="va">wheelNeedsPassword</span> <span class="op">=</span> <span class="cn">false</span><span class="op">;</span></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>  <span class="va">environment</span>.<span class="va">systemPackages</span> <span class="op">=</span> <span class="kw">with</span> pkgs<span class="op">;</span> <span class="op">[</span></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    vim</span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>    htop</span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>    tmux</span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>    wget</span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>  <span class="op">];</span></span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a>  <span class="va">networking</span>.<span class="va">useDHCP</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>With this, we can create an LXD image with the following command:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nix-shell</span> <span class="at">-p</span> nixos-generators <span class="at">--run</span> <span class="dt">\</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="st">&#39;lxc image import --alias nixos \</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="st">    $(nixos-generate --format lxc-metadata --configuration ./configuration.nix) \</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="st">    $(nixos-generate --format lxc --configuration ./configuration.nix)&#39;</span></span></code></pre></div>
+<p>Now that we’ve created an image under the alias <code>nixos</code>,
+we can launch a NixOS container with
+<code>lxc launch nixos nixos-test -c security.nesting=true</code>.</p>
+<p>Once an alias is defined like this:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">lxc</span> alias add nixos <span class="st">&#39;exec @ARGS@ --mode interactive -- /run/current-system/sw/bin/login -p -f nixos&#39;</span></span></code></pre></div>
+<p>Logging into a running NixOS container is as simple as
+<code>lxc nixos nixos-test</code>. We can now fill in
+<code>/etc/nixos/configuration.nix</code> and
+<code>sudo nixos-rebuild switch</code> as needed.</p>
+<h1 id="ldap-authentication">LDAP Authentication</h1>
+<p>Setting up LDAP authentication was… not as straightforward as I’d
+hoped.</p>
+<h2 id="first-attempt">First Attempt</h2>
+<p>Let’s forget about group authorization for a moment, and try to get
+LDAP-based ssh logins working.</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode nix"><code class="sourceCode nix"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">lib</span><span class="op">,</span> <span class="va">config</span><span class="op">,</span> <span class="va">pkgs</span><span class="op">,</span> <span class="op">...</span> <span class="op">}</span>:</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>  <span class="va">users</span>.<span class="va">ldap</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="va">enable</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="va">base</span> <span class="op">=</span> <span class="st">&quot;dc=example,dc=com&quot;</span><span class="op">;</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    <span class="va">server</span> <span class="op">=</span> <span class="st">&quot;ldap://example.com/&quot;</span><span class="op">;</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    <span class="va">useTLS</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    <span class="va">extraConfig</span> <span class="op">=</span> <span class="st">&#39;&#39;</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="st">      ldap_version 3</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="st">      pam_password md5</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="st">    &#39;&#39;</span><span class="op">;</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>  <span class="va">security</span>.<span class="va">pam</span>.<span class="va">services</span>.<span class="va">sshd</span>.<span class="va">makeHomeDir</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Note that the LDAP server we are using is configured to allow
+anonymous binding and authentication, which may not fit your
+use-case.</p>
+<p>Unfortunately, this doesn’t work; attempting to login as a LDAP user
+gives errors like the following:</p>
+<pre class="plaintext"><code>Jul 24 10:51:23 nixos sshd[11992]: Postponed keyboard-interactive for invalid user nixos-user from a.b.c.d port 59828 ssh2 [preauth]
+Jul 24 10:51:25 nixos sshd[11994]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=a.b.c.d  user=nixos-user
+Jul 24 10:51:25 nixos sshd[11994]: pam_ldap: error trying to bind as user &quot;uid=nixos-user,ou=Users,dc=example,dc=com&quot; (Invalid credentials)
+Jul 24 10:51:26 nixos sshd[11992]: error: PAM: Authentication failure for illegal user nixos-user from a.b.c.d</code></pre>
+<p>This is frustratingly misleading since the real culprit is this,
+slightly preceding, message from sshd:</p>
+<pre><code>Jul 24 10:51:23 nixos sshd[11992]: User nixos-user not allowed because shell /bin/bash does not exist</code></pre>
+<p>This occurs because in our LDAP server, we had set users’ LDAP
+loginShell attribute to <code>/bin/bash</code>. In hindsight, I don’t
+think this was such a bad a thing to do, considering that I’ve never
+dealt with a single system in which <code>/bin/bash</code> doesn’t exist
+(with the exception of NixOS, of course :smile: ).</p>
+<h2 id="second-attempt">Second Attempt</h2>
+<p><a href="https://serverfault.com/a/137996">The standard approach</a>
+to solving this problem is configuring the LDAP client to override the
+relevant attribute:</p>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode nix"><code class="sourceCode nix"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>...</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  <span class="va">users</span>.<span class="va">ldap</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">...</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    <span class="va">extraConfig</span> = &#39;&#39;</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>      <span class="op">...</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>      <span class="va">nss_override_attribute_value</span> <span class="va">loginShell</span> /<span class="va">run</span>/<span class="va">current-system</span>/<span class="va">sw</span>/<span class="va">bin</span>/<span class="va">bash</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>    &#39;&#39;;</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>  ...</span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Unfortunately, this doesn’t seem to solve the issue, and sshd
+continues to complain about <code>/bin/bash</code> missing.<a
+href="#fn2" class="footnote-ref" id="fnref2"
+role="doc-noteref"><sup>2</sup></a></p>
+<p>This seems to leave us with changing the <code>loginShell</code>
+attributes to <code>/bin/sh</code>, since that’s the only way to
+accommodate NixOS systems while maintaining compatibility with the
+non-NixOS systems also using LDAP. But <code>/bin/sh</code> isn’t a nice
+shell to work in, so do we really want to force this on everyone across
+all machines? Well, there is one easy trick to make this all go away;
+just symlink <code>/bin/bash</code> to
+<code>/run/current-system/sw/bin/bash</code> <a
+href="https://discourse.nixos.org/t/add-bin-bash-to-avoid-unnecessary-pain/5673/38">:gasp:</a>.</p>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode nix"><code class="sourceCode nix"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">lib</span><span class="op">,</span> <span class="va">config</span><span class="op">,</span> <span class="va">pkgs</span><span class="op">,</span> <span class="op">...</span> <span class="op">}</span>:</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>  <span class="va">users</span>.<span class="va">ldap</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    <span class="va">enable</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    <span class="va">base</span> <span class="op">=</span> <span class="st">&quot;dc=example,dc=com&quot;</span><span class="op">;</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>    <span class="va">server</span> <span class="op">=</span> <span class="st">&quot;ldap://example.com/&quot;</span><span class="op">;</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>    <span class="va">useTLS</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>    <span class="va">extraConfig</span> <span class="op">=</span> <span class="st">&#39;&#39;</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="st">      ldap_version 3</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="st">      pam_password md5</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a><span class="st">      # TOFIX: this does not work for some reason</span></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a><span class="st">      # # https://serverfault.com/a/137996</span></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a><span class="st">      # nss_override_attribute_value loginShell /run/current-system/sw/bin/bash</span></span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a><span class="st">    &#39;&#39;</span><span class="op">;</span></span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>  <span class="co"># evil, horrifying hack for dysfunctional nss_override_attribute_value</span></span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a>  <span class="va">systemd</span>.<span class="va">tmpfiles</span>.<span class="va">rules</span> <span class="op">=</span> <span class="op">[</span></span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;L /bin/bash - - - - /run/current-system/sw/bin/bash&quot;</span></span>
+<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a>  <span class="op">];</span></span>
+<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h2
+id="group-based-authorization-and-home-directory-creation">Group-based
+Authorization and Home Directory Creation</h2>
+<p>LDAP group-based authorization was also not as straightforward as I’d
+hoped. Adding
+<code>pam_groupdn cn=admin,ou=Groups,dc=example,dc=com</code> to
+<code>users.ldap.extraConfig</code> only seems to work when users solely
+belong to the <code>admin</code> group, which was not the case for us.
+Instead, using <code>pam_listfile.so</code> got us what we wanted:</p>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode nix"><code class="sourceCode nix"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>...</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  <span class="op">...</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  <span class="va">security</span>.<span class="va">pam</span>.<span class="va">services</span>.<span class="va">sshd</span> = {</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>    <span class="va">makeHomeDir</span> = <span class="va">true</span>;</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>    <span class="co"># see https://stackoverflow.com/a/47041843 for why this is required</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>    <span class="va">text</span> = <span class="va">lib</span>.<span class="va">mkDefault</span> (</span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>      <span class="va">lib</span>.<span class="va">mkBefore</span> &#39;&#39;</span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>        <span class="va">auth</span> <span class="va">required</span> <span class="va">pam_listfile</span>.<span class="va">so</span> \</span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>          <span class="va">item</span>=<span class="va">group</span> <span class="va">sense</span>=<span class="va">allow</span> <span class="va">onerr</span>=<span class="va">fail</span> <span class="va">file</span>=/<span class="va">etc</span>/<span class="va">allowed_groups</span></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>      &#39;&#39;</span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>    );</span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span>;</span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>  environment.etc.allowed_groups = <span class="op">{</span></span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>    <span class="va">text</span> <span class="op">=</span> <span class="st">&quot;admins&quot;</span><span class="op">;</span></span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>    <span class="va">mode</span> <span class="op">=</span> <span class="st">&quot;0444&quot;</span><span class="op">;</span></span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span>;</span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>  ...</span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<h2 id="ldap-authentication-for-nginx">LDAP Authentication for
+Nginx</h2>
+<p>This is actually just a variation on <a
+href="https://nixos.wiki/wiki/Nginx#Authentication_via_PAM">the example
+for PAM authentication for Nginx on the NixOS Wiki</a> used along with
+<code>pam_listfile.so</code>:</p>
+<div class="sourceCode" id="cb10"><pre
+class="sourceCode nix"><code class="sourceCode nix"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>...</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>  <span class="op">...</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>  <span class="va">services</span>.<span class="va">nginx</span> = {</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>    <span class="va">enable</span> = <span class="va">true</span>;</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>    <span class="va">package</span> = (<span class="va">pkgs</span>.<span class="va">nginx</span>.<span class="va">override</span> { <span class="va">modules</span> = [ <span class="va">pkgs</span>.<span class="va">nginxModules</span>.<span class="va">pam</span> ]; <span class="op">}</span>);</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>    virtualHosts.<span class="st">&quot;www.example.com&quot;</span> = <span class="op">{</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>      <span class="va">enableACME</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>      <span class="va">forceSSL</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>      ...</span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>      <span class="va">extraConfig</span> <span class="op">=</span> <span class="st">&#39;&#39;</span></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a><span class="st">        auth_pam &quot;LDAP Authentication Required&quot;;</span></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a><span class="st">        auth_pam_service_name &quot;nginx&quot;;</span></span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a><span class="st">      &#39;&#39;</span><span class="op">;</span></span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span>;</span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a>  };</span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a>  security.pam.services.nginx.text = <span class="st">&#39;&#39;</span></span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a><span class="st">    auth    required     pam_listfile.so \</span></span>
+<span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a><span class="st">                         item=group sense=allow onerr=fail file=/etc/allowed_groups</span></span>
+<span id="cb10-20"><a href="#cb10-20" aria-hidden="true" tabindex="-1"></a><span class="st">    auth    required     </span><span class="sc">${</span>pkgs.pam_ldap<span class="sc">}</span><span class="st">/lib/security/pam_ldap.so</span></span>
+<span id="cb10-21"><a href="#cb10-21" aria-hidden="true" tabindex="-1"></a><span class="st">    account required     </span><span class="sc">${</span>pkgs.pam_ldap<span class="sc">}</span><span class="st">/lib/security/pam_ldap.so</span></span>
+<span id="cb10-22"><a href="#cb10-22" aria-hidden="true" tabindex="-1"></a><span class="st">  &#39;&#39;</span>;</span>
+<span id="cb10-23"><a href="#cb10-23" aria-hidden="true" tabindex="-1"></a>  ...</span>
+<span id="cb10-24"><a href="#cb10-24" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<p>With this configuration, accesses to <code>www.example.com</code>
+will be authenticated with HTTP Basic Authentication backed by the same
+LDAP group-based policy.</p>
+<h1 id="wrapping-up">Wrapping Up</h1>
+<p>After working through a fairly involved example of deploying NixOS
+into conventional infrastructure, I’m left with the impression that
+there’s a lot more we can do to make the experience working with mundane
+things like LDAP much better. I would love to see NixOS becoming the
+sysadmin’s favorite distribution, as it definitely has the potential to
+become so.</p>
+<p><small> Thanks to __pandaman64__ for comments and suggestions.
+</small></p>
+<aside id="footnotes" class="footnotes footnotes-end-of-document"
+role="doc-endnotes">
+<hr />
+<ol>
+<li id="fn1"><p>We either expose relevant ports via <a
+href="https://lxd.readthedocs.io/en/latest/instances/#type-proxy">LXD
+proxy devices</a>, or directly expose the containers to the network
+using <a
+href="https://lxd.readthedocs.io/en/latest/networks/#network-macvlan">macvlan</a>.
+For the purposes of this post, you can follow along with the assumption
+that the HTTP and HTTPS ports of the containers are accessible from the
+Internet at <code>www.example.com</code>.<a href="#fnref1"
+class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn2"><p>If you know how to fix this, please let me know!<a
+href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</aside>]]>
+      </description>
+      <pubDate>Sat, 25 Jul 2020 00:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Working Through the Jepsen Tutorial with a NixOS Container Cluster</title>
+      <link>https://mt-caret.github.io/blog/2020-08-07-jepsen-nixos-containers</link>
+      <description>
+        <![CDATA[<p><a href="https://github.com/jepsen-io/jepsen">Jepsen</a> is a
+distributed system testing library which has <a
+href="http://jepsen.io/analyses">found numerous issues with existing
+distributed systems</a>. I’ve always wanted to try it out, but because
+it was written in an <a href="https://clojure.org/">unfamiliar
+language</a><a href="#fn1" class="footnote-ref" id="fnref1"
+role="doc-noteref"><sup>1</sup></a> I couldn’t bring myself to take the
+plunge. A few outages and some frightening issues later with a
+distributed system that we run at work, I finally took some time to <a
+href="https://www.braveclojure.com/">learn a bit of Clojure</a> and go
+through the <a
+href="https://github.com/jepsen-io/jepsen/blob/master/doc/tutorial/index.md">excellent
+tutorial for Jepsen</a>.</p>
+<p>The tutorial is a step-by-step guide on how to create a Jepsen test
+for <a href="https://etcd.io/">etcd</a>, a popular key-value based on
+the <a href="https://raft.github.io/">the Raft consensus algorithm</a>.
+Since we’re testing distributed systems, we need multiple systems
+running, and Jepsen defaults to requiring five machines accessible in a
+certain way. Getting the configuration exactly right took some time to
+figure out, so I’ve created a NixOS configuration module that you can
+import which will take care of setting up etcd in NixOS containers
+correctly:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode nix"><code class="sourceCode nix"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">config</span><span class="op">,</span> <span class="va">lib</span><span class="op">,</span> <span class="va">pkgs</span><span class="op">,</span> <span class="op">...</span> <span class="op">}</span>:</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">let</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="va">unstable</span> <span class="op">=</span> <span class="bu">import</span> <span class="ss">./unstable.nix</span><span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="va">addressMap</span> <span class="op">=</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>      <span class="st">&quot;</span>n1<span class="st">&quot;</span> <span class="op">=</span> <span class="op">{</span> <span class="va">localAddress</span> <span class="op">=</span> <span class="st">&quot;10.233.0.101&quot;</span><span class="op">;</span> <span class="va">hostAddress</span> <span class="op">=</span> <span class="st">&quot;10.233.1.101&quot;</span><span class="op">;</span> <span class="op">};</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>      <span class="st">&quot;n2&quot;</span> <span class="op">=</span> <span class="op">{</span> <span class="va">localAddress</span> <span class="op">=</span> <span class="st">&quot;10.233.0.102&quot;</span><span class="op">;</span> <span class="va">hostAddress</span> <span class="op">=</span> <span class="st">&quot;10.233.1.102&quot;</span><span class="op">;</span> <span class="op">};</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>      <span class="st">&quot;n3&quot;</span> <span class="op">=</span> <span class="op">{</span> <span class="va">localAddress</span> <span class="op">=</span> <span class="st">&quot;10.233.0.103&quot;</span><span class="op">;</span> <span class="va">hostAddress</span> <span class="op">=</span> <span class="st">&quot;10.233.1.103&quot;</span><span class="op">;</span> <span class="op">};</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>      <span class="st">&quot;n4&quot;</span> <span class="op">=</span> <span class="op">{</span> <span class="va">localAddress</span> <span class="op">=</span> <span class="st">&quot;10.233.0.104&quot;</span><span class="op">;</span> <span class="va">hostAddress</span> <span class="op">=</span> <span class="st">&quot;10.233.1.104&quot;</span><span class="op">;</span> <span class="op">};</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>      <span class="st">&quot;n5&quot;</span> <span class="op">=</span> <span class="op">{</span> <span class="va">localAddress</span> <span class="op">=</span> <span class="st">&quot;10.233.0.105&quot;</span><span class="op">;</span> <span class="va">hostAddress</span> <span class="op">=</span> <span class="st">&quot;10.233.1.105&quot;</span><span class="op">;</span> <span class="op">};</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>  <span class="va">toHostsEntry</span> <span class="op">=</span> <span class="va">name</span><span class="op">:</span> <span class="op">{</span> <span class="va">localAddress</span><span class="op">,</span> <span class="op">...</span> <span class="op">}</span>: <span class="st">&quot;</span><span class="sc">${</span>localAddress<span class="sc">}</span><span class="st"> </span><span class="sc">${</span>name<span class="sc">}</span><span class="st">&quot;</span><span class="op">;</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>  <span class="va">extraHosts</span> <span class="op">=</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    <span class="bu">builtins</span>.concatStringsSep <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>      <span class="op">(</span>lib.attrsets.mapAttrsToList toHostsEntry addressMap<span class="op">);</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>  <span class="va">nodeConfig</span> <span class="op">=</span> <span class="va">hostName</span><span class="op">:</span> <span class="op">{</span> <span class="va">localAddress</span><span class="op">,</span> <span class="va">hostAddress</span> <span class="op">}</span>: <span class="op">{</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    <span class="kw">inherit</span> localAddress hostAddress<span class="op">;</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    <span class="va">ephemeral</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    <span class="va">autoStart</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="va">privateNetwork</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    <span class="va">config</span> <span class="op">=</span> <span class="op">{</span> <span class="va">config</span><span class="op">,</span> <span class="va">pkgs</span><span class="op">,</span> <span class="op">...</span> <span class="op">}</span>:</span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>      <span class="op">{</span></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>        <span class="va">networking</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>          <span class="kw">inherit</span> hostName extraHosts<span class="op">;</span></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>        <span class="op">};</span></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>        <span class="va">services</span>.<span class="va">openssh</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>          <span class="va">enable</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a>          <span class="va">permitRootLogin</span> <span class="op">=</span> <span class="st">&quot;yes&quot;</span><span class="op">;</span></span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a>        <span class="op">};</span></span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a>        <span class="va">users</span>.<span class="va">users</span>.<span class="va">root</span>.<span class="va">initialPassword</span> <span class="op">=</span> <span class="st">&quot;root&quot;</span><span class="op">;</span></span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a>        <span class="va">system</span>.<span class="va">stateVersion</span> <span class="op">=</span> <span class="st">&quot;20.03&quot;</span><span class="op">;</span></span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a>        <span class="va">services</span>.<span class="va">etcd</span> <span class="op">=</span></span>
+<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a>          <span class="kw">let</span></span>
+<span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a>            <span class="va">peerUrl</span> <span class="op">=</span> <span class="st">&quot;http://</span><span class="sc">${</span>localAddress<span class="sc">}</span><span class="st">:2380&quot;</span><span class="op">;</span></span>
+<span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a>            <span class="va">clientUrl</span> <span class="op">=</span> <span class="st">&quot;http://</span><span class="sc">${</span>localAddress<span class="sc">}</span><span class="st">:2379&quot;</span><span class="op">;</span></span>
+<span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a>            <span class="va">toClusterEntry</span> <span class="op">=</span> <span class="va">name</span><span class="op">:</span> <span class="op">{</span> <span class="va">localAddress</span><span class="op">,</span> <span class="op">...</span> <span class="op">}</span>:</span>
+<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a>              <span class="st">&quot;</span><span class="sc">${</span>name<span class="sc">}</span><span class="st">=http://</span><span class="sc">${</span>localAddress<span class="sc">}</span><span class="st">:2380&quot;</span><span class="op">;</span></span>
+<span id="cb1-43"><a href="#cb1-43" aria-hidden="true" tabindex="-1"></a>          <span class="kw">in</span></span>
+<span id="cb1-44"><a href="#cb1-44" aria-hidden="true" tabindex="-1"></a>            <span class="op">{</span></span>
+<span id="cb1-45"><a href="#cb1-45" aria-hidden="true" tabindex="-1"></a>              <span class="va">enable</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
+<span id="cb1-46"><a href="#cb1-46" aria-hidden="true" tabindex="-1"></a>              <span class="va">name</span> <span class="op">=</span> hostName<span class="op">;</span></span>
+<span id="cb1-47"><a href="#cb1-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-48"><a href="#cb1-48" aria-hidden="true" tabindex="-1"></a>              <span class="va">initialAdvertisePeerUrls</span> <span class="op">=</span> <span class="op">[</span> peerUrl <span class="op">];</span></span>
+<span id="cb1-49"><a href="#cb1-49" aria-hidden="true" tabindex="-1"></a>              <span class="va">listenPeerUrls</span> <span class="op">=</span> <span class="op">[</span> peerUrl <span class="op">];</span></span>
+<span id="cb1-50"><a href="#cb1-50" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-51"><a href="#cb1-51" aria-hidden="true" tabindex="-1"></a>              <span class="va">advertiseClientUrls</span> <span class="op">=</span> <span class="op">[</span> clientUrl <span class="op">];</span></span>
+<span id="cb1-52"><a href="#cb1-52" aria-hidden="true" tabindex="-1"></a>              <span class="va">listenClientUrls</span> <span class="op">=</span> <span class="op">[</span> clientUrl <span class="st">&quot;http://127.0.0.1:2379&quot;</span> <span class="op">];</span></span>
+<span id="cb1-53"><a href="#cb1-53" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-54"><a href="#cb1-54" aria-hidden="true" tabindex="-1"></a>              <span class="va">initialClusterToken</span> <span class="op">=</span> <span class="st">&quot;etcd-cluster&quot;</span><span class="op">;</span></span>
+<span id="cb1-55"><a href="#cb1-55" aria-hidden="true" tabindex="-1"></a>              <span class="va">initialCluster</span> <span class="op">=</span></span>
+<span id="cb1-56"><a href="#cb1-56" aria-hidden="true" tabindex="-1"></a>                lib.attrsets.mapAttrsToList toClusterEntry addressMap<span class="op">;</span></span>
+<span id="cb1-57"><a href="#cb1-57" aria-hidden="true" tabindex="-1"></a>              <span class="va">initialClusterState</span> <span class="op">=</span> <span class="st">&quot;new&quot;</span><span class="op">;</span></span>
+<span id="cb1-58"><a href="#cb1-58" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-59"><a href="#cb1-59" aria-hidden="true" tabindex="-1"></a>              <span class="co"># Apparently Jepsen can&#39;t read journald logs? Unfortunate.</span></span>
+<span id="cb1-60"><a href="#cb1-60" aria-hidden="true" tabindex="-1"></a>              <span class="va">extraConf</span>.<span class="va">LOG_OUTPUT</span> <span class="op">=</span> <span class="st">&quot;stderr&quot;</span><span class="op">;</span></span>
+<span id="cb1-61"><a href="#cb1-61" aria-hidden="true" tabindex="-1"></a>            <span class="op">};</span></span>
+<span id="cb1-62"><a href="#cb1-62" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-63"><a href="#cb1-63" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Workaround for nixos-container issue</span></span>
+<span id="cb1-64"><a href="#cb1-64" aria-hidden="true" tabindex="-1"></a>        <span class="co"># (see https://github.com/NixOS/nixpkgs/issues/67265 and</span></span>
+<span id="cb1-65"><a href="#cb1-65" aria-hidden="true" tabindex="-1"></a>        <span class="co"># https://github.com/NixOS/nixpkgs/pull/81371#issuecomment-605526099).</span></span>
+<span id="cb1-66"><a href="#cb1-66" aria-hidden="true" tabindex="-1"></a>        <span class="co"># The etcd service is of type &quot;notify&quot;, which means that</span></span>
+<span id="cb1-67"><a href="#cb1-67" aria-hidden="true" tabindex="-1"></a>        <span class="co"># etcd would not be considered started until etcd is fully online;</span></span>
+<span id="cb1-68"><a href="#cb1-68" aria-hidden="true" tabindex="-1"></a>        <span class="co"># however, since NixOS container networking only works sometime *after*</span></span>
+<span id="cb1-69"><a href="#cb1-69" aria-hidden="true" tabindex="-1"></a>        <span class="co"># multi-user.target, we forgo etcd&#39;s notification entirely.</span></span>
+<span id="cb1-70"><a href="#cb1-70" aria-hidden="true" tabindex="-1"></a>        <span class="va">systemd</span>.<span class="va">services</span>.<span class="va">etcd</span>.<span class="va">serviceConfig</span>.<span class="va">Type</span> <span class="op">=</span> lib.mkForce <span class="st">&quot;exec&quot;</span><span class="op">;</span></span>
+<span id="cb1-71"><a href="#cb1-71" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-72"><a href="#cb1-72" aria-hidden="true" tabindex="-1"></a>        <span class="va">systemd</span>.<span class="va">services</span>.<span class="va">etcd</span>.<span class="va">serviceConfig</span>.<span class="va">StandardOutput</span> <span class="op">=</span> <span class="st">&quot;file:/var/log/etcd.log&quot;</span><span class="op">;</span></span>
+<span id="cb1-73"><a href="#cb1-73" aria-hidden="true" tabindex="-1"></a>        <span class="va">systemd</span>.<span class="va">services</span>.<span class="va">etcd</span>.<span class="va">serviceConfig</span>.<span class="va">StandardError</span> <span class="op">=</span> <span class="st">&quot;file:/var/log/etcd.log&quot;</span><span class="op">;</span></span>
+<span id="cb1-74"><a href="#cb1-74" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-75"><a href="#cb1-75" aria-hidden="true" tabindex="-1"></a>        <span class="va">networking</span>.<span class="va">firewall</span>.<span class="va">allowedTCPPorts</span> <span class="op">=</span> <span class="op">[</span> <span class="dv">2379</span> <span class="dv">2380</span> <span class="op">];</span></span>
+<span id="cb1-76"><a href="#cb1-76" aria-hidden="true" tabindex="-1"></a>      <span class="op">};</span></span>
+<span id="cb1-77"><a href="#cb1-77" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb1-78"><a href="#cb1-78" aria-hidden="true" tabindex="-1"></a><span class="kw">in</span></span>
+<span id="cb1-79"><a href="#cb1-79" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb1-80"><a href="#cb1-80" aria-hidden="true" tabindex="-1"></a>  <span class="va">containers</span> <span class="op">=</span> lib.attrsets.mapAttrs nodeConfig addressMap<span class="op">;</span></span>
+<span id="cb1-81"><a href="#cb1-81" aria-hidden="true" tabindex="-1"></a>  <span class="va">networking</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb1-82"><a href="#cb1-82" aria-hidden="true" tabindex="-1"></a>    <span class="kw">inherit</span> extraHosts<span class="op">;</span></span>
+<span id="cb1-83"><a href="#cb1-83" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb1-84"><a href="#cb1-84" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>As Jepsen doesn’t support NixOS natively, a few tweaks were required,
+but there were suprisingly few hiccups along the way. Thank you <a
+href="https://aphyr.com/">aphyr</a> for the amazing work! Here’s the
+code that I ended up with after going through the tutorial here, and
+encourage you to try it out.</p>
+<p><a
+href="https://github.com/mt-caret/nixos-jepsen.etcdemo">mt-caret/nixos-jepsen.etcdemo</a></p>
+<p>I’ll probably try setting up a Jepsen test for the distributed system
+that we use at work next, and I’m looking forward to blogging about what
+I learn along the way.</p>
+<aside id="footnotes" class="footnotes footnotes-end-of-document"
+role="doc-endnotes">
+<hr />
+<ol>
+<li id="fn1"><p>I distinctly remember trying to learn Clojure and
+utterly failing back in high school. After working with and enjoying the
+ML family of languages and its descendants (OCaml, F#, Haskell, etc.)
+and flipping through SICP, Clojure feels much less unfamiliar.<a
+href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</aside>]]>
+      </description>
+      <pubDate>Fri, 07 Aug 2020 00:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Bootstrapping Nix channels in NixOS</title>
+      <link>https://mt-caret.github.io/blog/2021-06-19-bootstrapping-nix-channels-in-nixos</link>
+      <description>
+        <![CDATA[<p>A few years after starting to use NixOS, I realized that the
+experience of reproducing my setup on a new machine has become
+<em>harder</em>, not easier, especially after setting up <a
+href="./2020-06-29-optin-state.html">encryption and opt-in state</a>.
+This is rather embarrassing, so here’s my first step in remedying
+that.</p>
+<p>My NixOS configuration currently depends on multiple channels
+(<code>&lt;nixos-20.09&gt;</code>, <code>&lt;nixos-unstable&gt;</code>,
+<code>&lt;nixpkgs-unstable&gt;</code>, and <a
+href="https://github.com/nix-community/home-manager">home-manager</a>):</p>
+<pre><code>https://channels.nixos.org/nixos-20.09/nixexprs.tar.xz nixos
+https://channels.nixos.org/nixos-unstable/nixexprs.tar.xz unstable
+https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.xz actual-unstable
+https://github.com/nix-community/home-manager/archive/release-20.09.tar.gz home-manager</code></pre>
+<p>What’s painful about this is that on a clean install the various nix
+channels aren’t present on my machine, and I need to manually set up the
+required Nix channels for the root user via the <code>nix-channel</code>
+command or by writing to <code>/root/.nix-channels</code>. I always
+forget to do this, and get a variant of the following error:</p>
+<pre><code>nix-repl&gt; &lt;foo&gt;
+error: file &#39;foo&#39; was not found in the Nix search path (add it using $NIX_PATH or -I), at (string):1:1</code></pre>
+<p>The recommended fix I usually hear is to avoid using Nix channels
+entirely and <a href="https://github.com/NixOS/nixpkgs/issues/62832">pin
+the various nixpkgs in configuration.nix</a>. However, <em>I don’t want
+to do this</em>. It’s painful to have to update the pin every so often,
+and my nixpkgs lags behind Nix channels so I get a lot of binary cache
+misses and end up building many packages from source, making the
+experience not unlike Gentoo.</p>
+<p>On the other hand, doing <code>builtins.fetchTarball</code> every
+time also isn’t ideal. Who wants to require an Internet connect every
+time you need to change the font size for your decleratively configured
+terminal emulator? If we sacrifice just a bit of determinism (but not
+too much) we can do better.</p>
+<p>In the example above, when the import path <code>foo</code> doesn’t
+exist, evaluation of <code>&lt;foo&gt;</code> results in a plain old
+exception which can be caught with <code>builtins.tryEval</code>:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode nix"><code class="sourceCode nix"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">let</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>  <span class="va">resolvedPath</span> <span class="op">=</span> <span class="bu">builtins</span>.tryEval &lt;nixos<span class="op">-</span>unstable&gt;<span class="op">;</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="kw">in</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">if</span> resolvedNixPath.success <span class="kw">then</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    resolvedNixPath.value</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>  <span class="kw">else</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="bu">builtins</span>.<span class="bu">fetchTarball</span> <span class="st">&quot;https://channels.nixos.org/nixos-unstable/nixexprs.tar.xz&quot;</span></span></code></pre></div>
+<p>By checking if evaluation of the Nix import path threw an exception
+or not, we can determine if a particular <code>import &lt;foo&gt;</code>
+succeeded or not. We can then import nixpkgs normally if the import
+succeeds, or fall back to fetching a tarball and importing from there.
+This can be further extended to automatically create
+<code>.nix-channels</code> files for root and <a
+href="https://github.com/nix-community/home-manager">home-manager</a>
+users:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode nix"><code class="sourceCode nix"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">let</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>  <span class="va">resolve</span> <span class="op">=</span> <span class="va">nixPath</span><span class="op">:</span> <span class="va">defaultUrl</span><span class="op">:</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">let</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>      <span class="va">resolvedNixPath</span> <span class="op">=</span> <span class="bu">builtins</span>.tryEval nixPath<span class="op">;</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">in</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>      <span class="kw">if</span> resolvedNixPath.success <span class="kw">then</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>        resolvedNixPath.value</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>      <span class="kw">else</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>        <span class="bu">builtins</span>.trace</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>          <span class="st">&quot;WARNING: could not resolve path, defaulting to &#39;</span><span class="sc">${</span>defaultUrl<span class="sc">}</span><span class="st">&#39;&quot;</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>          <span class="op">(</span><span class="bu">builtins</span>.<span class="bu">fetchTarball</span> defaultUrl<span class="op">);</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>  <span class="va">channelUrl</span> <span class="op">=</span> <span class="va">channel</span><span class="op">:</span> <span class="st">&quot;https://channels.nixos.org/</span><span class="sc">${</span>channel<span class="sc">}</span><span class="st">/nixexprs.tar.xz&quot;</span><span class="op">;</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>  <span class="va">version</span> <span class="op">=</span> <span class="st">&quot;20.09&quot;</span><span class="op">;</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>  <span class="va">channels</span> <span class="op">=</span> <span class="op">[</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>      <span class="va">importPath</span> <span class="op">=</span> &lt;nixos&gt;<span class="op">;</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>      <span class="va">name</span> <span class="op">=</span> <span class="st">&quot;nixos&quot;</span><span class="op">;</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>      <span class="va">url</span> <span class="op">=</span> channelUrl <span class="st">&quot;nixos-</span><span class="sc">${</span>version<span class="sc">}</span><span class="st">&quot;</span><span class="op">;</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>      <span class="va">importPath</span> <span class="op">=</span> &lt;unstable&gt;<span class="op">;</span></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>      <span class="va">name</span> <span class="op">=</span> <span class="st">&quot;unstable&quot;</span><span class="op">;</span></span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>      <span class="va">url</span> <span class="op">=</span> channelUrl <span class="st">&quot;nixos-unstable&quot;</span><span class="op">;</span></span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>      <span class="va">importPath</span> <span class="op">=</span> &lt;actual<span class="op">-</span>unstable&gt;<span class="op">;</span></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>      <span class="va">name</span> <span class="op">=</span> <span class="st">&quot;actual-unstable&quot;</span><span class="op">;</span></span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>      <span class="va">url</span> <span class="op">=</span> channelUrl <span class="st">&quot;nixpkgs-unstable&quot;</span><span class="op">;</span></span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>  <span class="op">];</span></span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a>  <span class="va">allNixpkgs</span> <span class="op">=</span></span>
+<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a>    <span class="bu">builtins</span>.listToAttrs <span class="op">(</span></span>
+<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a>      <span class="bu">builtins</span>.<span class="bu">map</span> <span class="op">(</span></span>
+<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a>        <span class="op">{</span> <span class="va">importPath</span><span class="op">,</span> <span class="va">name</span><span class="op">,</span> <span class="va">url</span> <span class="op">}</span>:</span>
+<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a>          <span class="op">{</span></span>
+<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a>            <span class="kw">inherit</span> name<span class="op">;</span></span>
+<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a>            <span class="va">value</span> <span class="op">=</span> <span class="bu">import</span> <span class="op">(</span>resolve importPath url<span class="op">)</span> <span class="op">{};</span></span>
+<span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a>          <span class="op">}</span></span>
+<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a>      <span class="op">)</span> channels</span>
+<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a>    <span class="op">);</span></span>
+<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a><span class="kw">in</span></span>
+<span id="cb4-42"><a href="#cb4-42" aria-hidden="true" tabindex="-1"></a>allNixpkgs</span>
+<span id="cb4-43"><a href="#cb4-43" aria-hidden="true" tabindex="-1"></a><span class="op">//</span> <span class="kw">rec</span> <span class="op">{</span></span>
+<span id="cb4-44"><a href="#cb4-44" aria-hidden="true" tabindex="-1"></a>  <span class="va">nix-channels</span> <span class="op">=</span> allNixpkgs.nixos.writeTextFile <span class="op">{</span></span>
+<span id="cb4-45"><a href="#cb4-45" aria-hidden="true" tabindex="-1"></a>    <span class="va">name</span> <span class="op">=</span> <span class="st">&quot;.nix-channels&quot;</span><span class="op">;</span></span>
+<span id="cb4-46"><a href="#cb4-46" aria-hidden="true" tabindex="-1"></a>    <span class="va">text</span> <span class="op">=</span></span>
+<span id="cb4-47"><a href="#cb4-47" aria-hidden="true" tabindex="-1"></a>      <span class="bu">builtins</span>.concatStringsSep <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span></span>
+<span id="cb4-48"><a href="#cb4-48" aria-hidden="true" tabindex="-1"></a>        <span class="op">(</span><span class="bu">builtins</span>.<span class="bu">map</span> <span class="op">({</span> <span class="va">name</span><span class="op">,</span> <span class="va">url</span><span class="op">,</span> <span class="op">...</span> <span class="op">}</span>: <span class="st">&quot;</span><span class="sc">${</span>url<span class="sc">}</span><span class="st"> </span><span class="sc">${</span>name<span class="sc">}</span><span class="st">&quot;</span><span class="op">)</span> channels<span class="op">);</span></span>
+<span id="cb4-49"><a href="#cb4-49" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb4-50"><a href="#cb4-50" aria-hidden="true" tabindex="-1"></a>  <span class="va">home-manager-config</span> <span class="op">=</span> <span class="op">{</span> <span class="va">pkgs</span><span class="op">,</span> <span class="va">lib</span><span class="op">,</span> <span class="op">...</span> <span class="op">}</span>: <span class="op">{</span></span>
+<span id="cb4-51"><a href="#cb4-51" aria-hidden="true" tabindex="-1"></a>    <span class="va">home</span>.<span class="va">file</span>.<span class="st">&quot;</span>.nix-channels<span class="st">&quot;</span>.<span class="va">source</span> <span class="op">=</span> nix<span class="op">-</span>channels<span class="op">;</span></span>
+<span id="cb4-52"><a href="#cb4-52" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb4-53"><a href="#cb4-53" aria-hidden="true" tabindex="-1"></a>  <span class="va">nixos-config</span> <span class="op">=</span> <span class="op">{</span> <span class="op">...</span> <span class="op">}</span>: <span class="op">{</span></span>
+<span id="cb4-54"><a href="#cb4-54" aria-hidden="true" tabindex="-1"></a>    <span class="va">systemd</span>.<span class="va">tmpfiles</span>.<span class="va">rules</span> <span class="op">=</span> <span class="op">[</span></span>
+<span id="cb4-55"><a href="#cb4-55" aria-hidden="true" tabindex="-1"></a>      <span class="co"># unlike &quot;L&quot;, &quot;L+&quot; will remove the existing file if it exists and replace</span></span>
+<span id="cb4-56"><a href="#cb4-56" aria-hidden="true" tabindex="-1"></a>      <span class="co"># it a symlink</span></span>
+<span id="cb4-57"><a href="#cb4-57" aria-hidden="true" tabindex="-1"></a>      <span class="st">&quot;L+ /root/.nix-channels - - - - </span><span class="sc">${</span>nix<span class="op">-</span>channels<span class="sc">}</span><span class="st">&quot;</span></span>
+<span id="cb4-58"><a href="#cb4-58" aria-hidden="true" tabindex="-1"></a>    <span class="op">];</span></span>
+<span id="cb4-59"><a href="#cb4-59" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb4-60"><a href="#cb4-60" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>where importing <code>home-manager-config</code> for home-manager and
+<code>nixos-config</code> for root users will just work.</p>
+<p>Upgrading the NixOS version just works as well; simply bumping
+<code>version</code> and running
+<code>sudo nixos-rebuild switch --upgrade</code> twice will do it, where
+the first <code>nixos-rebuild switch</code> updates the
+<code>.nix-channel</code> file and the second
+<code>nixos-rebuild switch</code> does the actual upgrading.</p>
+<p>I’m pretty happy that I no longer have to think (too hard) about this
+part of the clean install process anymore. Unfortunately, since I use <a
+href="https://github.com/NixOS/nixpkgs/issues/34796#issuecomment-413559672">VirtualBox
+with the extension pack enabled</a>, every time I
+<code>nixos-rebuild switch --upgrade</code> I still get the Gentoo
+experience anyway :cry:.</p>]]>
+      </description>
+      <pubDate>Sat, 19 Jun 2021 00:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Static site generation in dune</title>
+      <link>https://mt-caret.github.io/blog/2024-11-09-static-site-generation-in-dune</link>
+      <description>
+        <![CDATA[<p>It’s been a while. People have suggested that I blog again, so here I
+am. Mostly it’s been a lack of time, but getting my static site
+generator working again was too painful for me to muster the energy to
+write anything. Let’s fix that first.</p>
+<p><a href="https://dune.build/">Dune</a>, the build system often used
+for OCaml projects, is pretty general, and you can use it as a
+Makefile-on-steroids.</p>
+<p>Here’s a simple dune rule for building a markdown file into an html
+file:</p>
+<pre><code>(rule
+ (deps build.sh 2024-11-09-static-site-generation-in-dune.md)
+ (targets 2024-11-09-static-site-generation-in-dune.html)
+ (action
+  (run build.sh 2024-11-09-static-site-generation-in-dune.md 2024-11-09-static-site-generation-in-dune.html)))</code></pre>
+<p>Where <code>build.sh</code> can do whatever you want to turn the
+markdown into html. I use pandoc for this site. There’s an immediate
+problem with this approach. We need to write one rule for every markdown
+file! What we want is something like <a
+href="https://accu.org/journals/overload/14/71/miller_2004/">recursive
+Makefiles</a> to generate rules for each markdown file, but for
+dune.</p>
+<p>Fortunately, the dune docs have a tutorial on <a
+href="https://dune.readthedocs.io/en/stable/howto/rule-generation.html">“rule
+generation”</a> that walks us through doing just this.</p>
+<p>The main dune file in our directory would look like this:</p>
+<pre><code>(include dune.inc)
+
+(rule
+ (deps
+  (source_tree .))
+ (action
+  (with-stdout-to
+   dune.inc.gen
+   (run ../gen/gen.exe))))
+
+(rule
+ (alias default)
+ (action
+  (diff dune.inc dune.inc.gen)))</code></pre>
+<p>The idea here is that we’ll have a program-generated
+<code>dune.inc</code> file which this <code>dune</code> file will
+include. Whenever there is a change in the source directory containing
+markdown files, <code>../gen/gen.exe</code> will be invoked to
+re-generate the <code>dune.inc</code> file, which will then result in a
+diff between the old and new <code>dune.inc</code> files due to the
+<code>(diff ...)</code> rule.</p>
+<p><code>dune promote</code> will update the generated
+<code>dune.inc</code> file to the new version, and
+<code>dune build</code> will rebuild all the markdown files. Using
+<code>dune build -w @default --auto-promote</code> will automate the
+promotion and watch for changes.</p>
+<p>The source for <code>gen.exe</code> looks like this:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode ocaml"><code class="sourceCode ocaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">open</span>! Core</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="kw">let</span> generate_pragma slug =</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">print_endline</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    [%<span class="dt">string</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>      {|</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>(rule</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a> (deps build.sh %{slug}.md)</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a> (targets %{slug}.html)</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a> (action</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>  (run build.sh %{slug}.md %{slug}.html)))|}]</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>;;</span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="kw">let</span> () =</span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> source_files =</span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    Sys_unix.ls_dir <span class="st">&quot;.&quot;</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    |&gt; <span class="dt">List</span>.sort ~<span class="dt">compare</span>:<span class="dt">String</span>.<span class="dt">compare</span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    |&gt; <span class="dt">List</span>.filter_map ~f:(<span class="kw">fun</span> file -&gt; <span class="dt">String</span>.chop_suffix file ~suffix:<span class="st">&quot;.md&quot;</span>)</span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>  <span class="kw">in</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>  <span class="dt">List</span>.iter source_files ~f:generate_pragma;</span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> output_files = <span class="dt">List</span>.map source_files ~f:(<span class="kw">fun</span> file -&gt; [%<span class="dt">string</span> <span class="st">&quot;%{file}.html&quot;</span>]) <span class="kw">in</span></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>  <span class="dt">print_endline</span></span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>    [%<span class="dt">string</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>      {|</span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>(alias</span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a>  (name default)</span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>  (deps %{<span class="dt">String</span>.concat ~sep:<span class="st">&quot; &quot;</span> output_files}))</span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a>  |}]</span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a>;;</span></code></pre></div>
+<p>We also want to generate an index page, so we’ll add an rule for
+that:</p>
+<pre><code>(rule
+ (deps ./index.sh (source_tree .))
+ (action
+  (with-stdout-to
+   index.html
+   (run ./index.sh))))</code></pre>
+<p>You can see the full source for this site <a
+href="https://github.com/mt-caret/blog-src">on GitHub</a>.</p>]]>
+      </description>
+      <pubDate>Sat, 09 Nov 2024 00:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
