@@ -4,7 +4,7 @@
     <title>mt_caret&apos;s blog</title>
     <link>https://mt-caret.github.io/blog</link>
     <description><![CDATA[mt_caret's blog]]></description>
-    <atom:link href="https://mt-caret.github.io/blog" rel="self" type="application/rss+xml"/>
+    <atom:link href="https://mt-caret.github.io/blog/rss.xml" rel="self" type="application/rss+xml"/>
     <docs>https://www.rssboard.org/rss-specification</docs>
     <generator>blog-src</generator>
     <item>

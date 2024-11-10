@@ -1,14 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
-  <id>47bac696-cd23-4e1f-8171-aef5f1f292e9</id>
+  <id>https://mt-caret.github.io/blog</id>
   <title type="text">mt_caret&apos;s blog</title>
-  <generator uri="https://github.com/mt-caret/blog-src" version="aade4d5">blog-src</generator>
+  <generator uri="https://github.com/mt-caret/blog-src" version="7cf7b59">blog-src</generator>
   <updated>2024-11-09T00:00:00Z</updated>
   <author>
     <name>mt_caret</name>
   </author>
+  <link href="https://mt-caret.github.io/blog/atom.xml" rel="self"/>
   <entry>
-    <id>1defcab1-93ee-4bf6-9511-0e744e8d1a93</id>
+    <id>tag:mt-caret.github.io,2020-06-29:1defcab1-93ee-4bf6-9511-0e744e8d1a93</id>
     <title type="text">Encypted Btrfs Root with Opt-in State on NixOS</title>
     <updated>2020-06-29T00:00:00Z</updated>
     <published>2020-06-29T00:00:00Z</published>
@@ -573,10 +574,10 @@ class=&quot;footnote-back&quot; role=&quot;doc-backlink&quot;&gt;↩︎&lt;/a&gt
 &lt;/ol&gt;
 &lt;/aside&gt;
     </content>
-    <link href="https://mt-caret.github.io/blog/2020-06-29-optin-state" rel="self"/>
+    <link href="https://mt-caret.github.io/blog/2020-06-29-optin-state" rel="alternate"/>
   </entry>
   <entry>
-    <id>851f141b-f08b-4f40-b849-ed32070a3053</id>
+    <id>tag:mt-caret.github.io,2020-07-25:851f141b-f08b-4f40-b849-ed32070a3053</id>
     <title type="text">Setting up LDAP Authentication with NixOS</title>
     <updated>2020-07-25T00:00:00Z</updated>
     <published>2020-07-25T00:00:00Z</published>
@@ -845,10 +846,10 @@ href=&quot;#fnref2&quot; class=&quot;footnote-back&quot; role=&quot;doc-backlink
 &lt;/ol&gt;
 &lt;/aside&gt;
     </content>
-    <link href="https://mt-caret.github.io/blog/2020-07-25-ldap-client-with-nixos" rel="self"/>
+    <link href="https://mt-caret.github.io/blog/2020-07-25-ldap-client-with-nixos" rel="alternate"/>
   </entry>
   <entry>
-    <id>9f24020a-27b7-4429-bccb-4a3aa4ab1748</id>
+    <id>tag:mt-caret.github.io,2020-08-07:9f24020a-27b7-4429-bccb-4a3aa4ab1748</id>
     <title type="text">Working Through the Jepsen Tutorial with a NixOS Container Cluster</title>
     <updated>2020-08-07T00:00:00Z</updated>
     <published>2020-08-07T00:00:00Z</published>
@@ -982,10 +983,10 @@ href=&quot;#fnref1&quot; class=&quot;footnote-back&quot; role=&quot;doc-backlink
 &lt;/ol&gt;
 &lt;/aside&gt;
     </content>
-    <link href="https://mt-caret.github.io/blog/2020-08-07-jepsen-nixos-containers" rel="self"/>
+    <link href="https://mt-caret.github.io/blog/2020-08-07-jepsen-nixos-containers" rel="alternate"/>
   </entry>
   <entry>
-    <id>11599fd3-2782-4262-8ab3-c2e1f0ee1e8a</id>
+    <id>tag:mt-caret.github.io,2021-06-19:11599fd3-2782-4262-8ab3-c2e1f0ee1e8a</id>
     <title type="text">Bootstrapping Nix channels in NixOS</title>
     <updated>2021-06-19T00:00:00Z</updated>
     <published>2021-06-19T00:00:00Z</published>
@@ -1118,10 +1119,10 @@ with the extension pack enabled&lt;/a&gt;, every time I
 &lt;code&gt;nixos-rebuild switch --upgrade&lt;/code&gt; I still get the Gentoo
 experience anyway :cry:.&lt;/p&gt;
     </content>
-    <link href="https://mt-caret.github.io/blog/2021-06-19-bootstrapping-nix-channels-in-nixos" rel="self"/>
+    <link href="https://mt-caret.github.io/blog/2021-06-19-bootstrapping-nix-channels-in-nixos" rel="alternate"/>
   </entry>
   <entry>
-    <id>1b57d296-19d1-4552-a823-f7b3b32f766d</id>
+    <id>tag:mt-caret.github.io,2024-11-09:1b57d296-19d1-4552-a823-f7b3b32f766d</id>
     <title type="text">Static site generation in dune</title>
     <updated>2024-11-09T00:00:00Z</updated>
     <published>2024-11-09T00:00:00Z</published>
@@ -1219,6 +1220,6 @@ that:&lt;/p&gt;
 &lt;p&gt;You can see the full source for this site &lt;a
 href=&quot;https://github.com/mt-caret/blog-src&quot;&gt;on GitHub&lt;/a&gt;.&lt;/p&gt;
     </content>
-    <link href="https://mt-caret.github.io/blog/2024-11-09-static-site-generation-in-dune" rel="self"/>
+    <link href="https://mt-caret.github.io/blog/2024-11-09-static-site-generation-in-dune" rel="alternate"/>
   </entry>
 </feed>
