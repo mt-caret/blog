@@ -23,6 +23,12 @@ pre {
   font-size: 80%;
 }
 
+p>code {
+  padding: 0em .4em;
+  background: #EAEAEA;
+  border-radius: 5px;
+}
+
 .sourceCode {
   background: #EAEAEA;
   border-radius: 5px;
