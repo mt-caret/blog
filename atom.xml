@@ -2,7 +2,7 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
   <id>https://mt-caret.github.io/blog</id>
   <title type="text">mt_caret&apos;s blog</title>
-  <generator uri="https://github.com/mt-caret/blog-src" version="2f957cd">blog-src</generator>
+  <generator uri="https://github.com/mt-caret/blog-src" version="75130aa">blog-src</generator>
   <updated>2024-11-09T00:00:00Z</updated>
   <author>
     <name>mt_caret</name>
@@ -232,10 +232,10 @@ class=&quot;sourceCode nix&quot;&gt;&lt;code class=&quot;sourceCode nix&quot;&gt
 &lt;span id=&quot;cb10-5&quot;&gt;&lt;a href=&quot;#cb10-5&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;      &lt;span class=&quot;va&quot;&gt;neededForBoot&lt;/span&gt; &lt;span class=&quot;op&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;cn&quot;&gt;true&lt;/span&gt;&lt;span class=&quot;op&quot;&gt;;&lt;/span&gt;&lt;/span&gt;
 &lt;span id=&quot;cb10-6&quot;&gt;&lt;a href=&quot;#cb10-6&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;    &lt;span class=&quot;op&quot;&gt;}&lt;/span&gt;;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
 &lt;p&gt;Although it’s possible to customize
-&lt;code&gt;/etc/nixos/configuration.nix&lt;/code&gt; at this point to set up all
-the things you need in one fell swoop, I recommend starting out with a
-reletively minimal config to make sure everything works ok. I went with
-something like this, with a user called &lt;code&gt;delta&lt;/code&gt;:&lt;/p&gt;
+&lt;code&gt;/mnt/etc/nixos/configuration.nix&lt;/code&gt; at this point to set up
+all the things you need in one fell swoop, I recommend starting out with
+a reletively minimal config to make sure everything works ok. I went
+with something like this, with a user called &lt;code&gt;delta&lt;/code&gt;:&lt;/p&gt;
 &lt;div class=&quot;sourceCode&quot; id=&quot;cb11&quot;&gt;&lt;pre
 class=&quot;sourceCode nix&quot;&gt;&lt;code class=&quot;sourceCode nix&quot;&gt;&lt;span id=&quot;cb11-1&quot;&gt;&lt;a href=&quot;#cb11-1&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;op&quot;&gt;{&lt;/span&gt; &lt;span class=&quot;va&quot;&gt;config&lt;/span&gt;&lt;span class=&quot;op&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;va&quot;&gt;pkgs&lt;/span&gt;&lt;span class=&quot;op&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;op&quot;&gt;...&lt;/span&gt; &lt;span class=&quot;op&quot;&gt;}&lt;/span&gt;:&lt;/span&gt;
 &lt;span id=&quot;cb11-2&quot;&gt;&lt;a href=&quot;#cb11-2&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;op&quot;&gt;{&lt;/span&gt;&lt;/span&gt;

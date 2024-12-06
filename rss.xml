@@ -229,10 +229,10 @@ class="sourceCode nix"><code class="sourceCode nix"><span id="cb10-1"><a href="#
 <span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>      <span class="va">neededForBoot</span> <span class="op">=</span> <span class="cn">true</span><span class="op">;</span></span>
 <span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span>;</span></code></pre></div>
 <p>Although it’s possible to customize
-<code>/etc/nixos/configuration.nix</code> at this point to set up all
-the things you need in one fell swoop, I recommend starting out with a
-reletively minimal config to make sure everything works ok. I went with
-something like this, with a user called <code>delta</code>:</p>
+<code>/mnt/etc/nixos/configuration.nix</code> at this point to set up
+all the things you need in one fell swoop, I recommend starting out with
+a reletively minimal config to make sure everything works ok. I went
+with something like this, with a user called <code>delta</code>:</p>
 <div class="sourceCode" id="cb11"><pre
 class="sourceCode nix"><code class="sourceCode nix"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="op">{</span> <span class="va">config</span><span class="op">,</span> <span class="va">pkgs</span><span class="op">,</span> <span class="op">...</span> <span class="op">}</span>:</span>
 <span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
