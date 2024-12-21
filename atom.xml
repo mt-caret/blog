@@ -2,7 +2,7 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
   <id>https://mt-caret.github.io/blog</id>
   <title type="text">mt_caret&apos;s blog</title>
-  <generator uri="https://github.com/mt-caret/blog-src" version="bbda571">blog-src</generator>
+  <generator uri="https://github.com/mt-caret/blog-src" version="d866987">blog-src</generator>
   <updated>2024-11-09T00:00:00Z</updated>
   <author>
     <name>mt_caret</name>
