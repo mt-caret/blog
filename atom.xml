@@ -2,8 +2,8 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
   <id>https://mt-caret.github.io/blog</id>
   <title type="text">mt_caret&apos;s blog</title>
-  <generator uri="https://github.com/mt-caret/blog-src" version="d866987">blog-src</generator>
-  <updated>2024-11-09T00:00:00Z</updated>
+  <generator uri="https://github.com/mt-caret/blog-src" version="2bbe166">blog-src</generator>
+  <updated>2025-02-02T00:00:00Z</updated>
   <author>
     <name>mt_caret</name>
   </author>
@@ -1221,5 +1221,73 @@ that:&lt;/p&gt;
 href=&quot;https://github.com/mt-caret/blog-src&quot;&gt;on GitHub&lt;/a&gt;.&lt;/p&gt;
     </content>
     <link href="https://mt-caret.github.io/blog/2024-11-09-static-site-generation-in-dune" rel="alternate"/>
+  </entry>
+  <entry>
+    <id>tag:mt-caret.github.io,2025-02-02:6bf20f9a-1635-4cf0-98f2-80361e16eb61</id>
+    <title type="text">Calling OCaml from C</title>
+    <updated>2025-02-02T00:00:00Z</updated>
+    <published>2025-02-02T00:00:00Z</published>
+    <content type="html">
+      &lt;p&gt;These are some notes on putting together a &lt;code&gt;dune&lt;/code&gt; file for
+creating a C executable which calls OCaml code.&lt;/p&gt;
+&lt;!-- TODO: Add link to repository --&gt;
+&lt;p&gt;The OCaml manual describes how to call OCaml code from C under the
+section “Advanced example with callbacks” in the chapter “Interfacing C
+with OCaml”, using the following invocations to
+&lt;code&gt;ocamlopt&lt;/code&gt;:&lt;/p&gt;
+&lt;div class=&quot;sourceCode&quot; id=&quot;cb1&quot;&gt;&lt;pre
+class=&quot;sourceCode bash&quot;&gt;&lt;code class=&quot;sourceCode bash&quot;&gt;&lt;span id=&quot;cb1-1&quot;&gt;&lt;a href=&quot;#cb1-1&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;ex&quot;&gt;$&lt;/span&gt; ocamlopt &lt;span class=&quot;at&quot;&gt;-output-obj&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-o&lt;/span&gt; modcaml.o mod.ml&lt;/span&gt;
+&lt;span id=&quot;cb1-2&quot;&gt;&lt;a href=&quot;#cb1-2&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;ex&quot;&gt;$&lt;/span&gt; ocamlopt &lt;span class=&quot;at&quot;&gt;-c&lt;/span&gt; modwrap.c&lt;/span&gt;
+&lt;span id=&quot;cb1-3&quot;&gt;&lt;a href=&quot;#cb1-3&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;ex&quot;&gt;$&lt;/span&gt; cp &lt;span class=&quot;kw&quot;&gt;`&lt;/span&gt;&lt;span class=&quot;ex&quot;&gt;ocamlopt&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-where&lt;/span&gt;&lt;span class=&quot;kw&quot;&gt;`&lt;/span&gt;/libasmrun.a mod.a &lt;span class=&quot;kw&quot;&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span class=&quot;fu&quot;&gt;chmod&lt;/span&gt; +w mod.a&lt;/span&gt;
+&lt;span id=&quot;cb1-4&quot;&gt;&lt;a href=&quot;#cb1-4&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;ex&quot;&gt;$&lt;/span&gt; ar r mod.a modcaml.o modwrap.o&lt;/span&gt;
+&lt;span id=&quot;cb1-5&quot;&gt;&lt;a href=&quot;#cb1-5&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;ex&quot;&gt;$&lt;/span&gt; cc &lt;span class=&quot;at&quot;&gt;-o&lt;/span&gt; prog &lt;span class=&quot;at&quot;&gt;-I&lt;/span&gt; &lt;span class=&quot;kw&quot;&gt;`&lt;/span&gt;&lt;span class=&quot;ex&quot;&gt;ocamlopt&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-where&lt;/span&gt;&lt;span class=&quot;kw&quot;&gt;`&lt;/span&gt; main.c mod.a &lt;span class=&quot;at&quot;&gt;-lm&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Reading &lt;a href=&quot;https://ocaml.org/manual/5.3/native.html&quot;&gt;the
+section in the OCaml manual about &lt;code&gt;ocamlopt&lt;/code&gt; command line
+options carefully&lt;/a&gt;, it looks like we can use
+&lt;code&gt;-output-complete-obj&lt;/code&gt; to simplify above commands:&lt;/p&gt;
+&lt;div class=&quot;sourceCode&quot; id=&quot;cb2&quot;&gt;&lt;pre
+class=&quot;sourceCode bash&quot;&gt;&lt;code class=&quot;sourceCode bash&quot;&gt;&lt;span id=&quot;cb2-1&quot;&gt;&lt;a href=&quot;#cb2-1&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;ex&quot;&gt;$&lt;/span&gt; ocamlopt &lt;span class=&quot;at&quot;&gt;-output-complete-obj&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-o&lt;/span&gt; modcaml.o mod.ml&lt;/span&gt;
+&lt;span id=&quot;cb2-2&quot;&gt;&lt;a href=&quot;#cb2-2&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;ex&quot;&gt;$&lt;/span&gt; ocamlopt &lt;span class=&quot;at&quot;&gt;-c&lt;/span&gt; modwrap.c&lt;/span&gt;
+&lt;span id=&quot;cb2-3&quot;&gt;&lt;a href=&quot;#cb2-3&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;ex&quot;&gt;$&lt;/span&gt; cc &lt;span class=&quot;at&quot;&gt;-o&lt;/span&gt; prog_native2 &lt;span class=&quot;at&quot;&gt;-I&lt;/span&gt; &lt;span class=&quot;kw&quot;&gt;`&lt;/span&gt;&lt;span class=&quot;ex&quot;&gt;ocamlopt&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-where&lt;/span&gt;&lt;span class=&quot;kw&quot;&gt;`&lt;/span&gt; main.c modcaml.o modwrap.o &lt;span class=&quot;at&quot;&gt;-lm&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;h2 id=&quot;translating-to-dune&quot;&gt;Translating to dune&lt;/h2&gt;
+&lt;p&gt;We first want to recreate the &lt;code&gt;modcaml.o&lt;/code&gt; file. Grepping
+in the dune codebase for &lt;code&gt;-output-complete-obj&lt;/code&gt;, we find &lt;a
+href=&quot;https://github.com/ocaml/dune/blob/bfe07c69771f016ab21f53069a898e642d3d1385/src/dune_rules/exe.ml#L75&quot;&gt;this
+code which matches on &lt;code&gt;Executables.Link_mode.t&lt;/code&gt;&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;The dune docs mention how to specify &lt;a
+href=&quot;https://dune.readthedocs.io/en/stable/reference/dune/executable.html#linking-modes&quot;&gt;linking
+modes&lt;/a&gt; for executables, so we’ll try that.&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;(executables
+ (names mod)
+ (modes object))&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;After some trial and error, I’ve figured out that the target
+corresponding to this rule is &lt;code&gt;mod.exe.o&lt;/code&gt;:&lt;/p&gt;
+&lt;div class=&quot;sourceCode&quot; id=&quot;cb4&quot;&gt;&lt;pre
+class=&quot;sourceCode bash&quot;&gt;&lt;code class=&quot;sourceCode bash&quot;&gt;&lt;span id=&quot;cb4-1&quot;&gt;&lt;a href=&quot;#cb4-1&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;ex&quot;&gt;$&lt;/span&gt; dune build &lt;span class=&quot;at&quot;&gt;--verbose&lt;/span&gt; mod.exe.o&lt;/span&gt;
+&lt;span id=&quot;cb4-2&quot;&gt;&lt;a href=&quot;#cb4-2&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;ex&quot;&gt;...&lt;/span&gt;&lt;/span&gt;
+&lt;span id=&quot;cb4-3&quot;&gt;&lt;a href=&quot;#cb4-3&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;ex&quot;&gt;Actual&lt;/span&gt; targets:&lt;/span&gt;
+&lt;span id=&quot;cb4-4&quot;&gt;&lt;a href=&quot;#cb4-4&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;ex&quot;&gt;-&lt;/span&gt; _build/default/mod.exe.o&lt;/span&gt;
+&lt;span id=&quot;cb4-5&quot;&gt;&lt;a href=&quot;#cb4-5&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;va&quot;&gt;Running&lt;/span&gt;&lt;span class=&quot;op&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;dv&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;op&quot;&gt;]&lt;/span&gt;&lt;span class=&quot;ex&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;er&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;bu&quot;&gt;cd&lt;/span&gt; _build/default &lt;span class=&quot;kw&quot;&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span class=&quot;ex&quot;&gt;/.../.opam/5.2.1/bin/ocamlc.opt&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-w&lt;/span&gt; @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 &lt;span class=&quot;at&quot;&gt;-strict-sequence&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-strict-formats&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-short-paths&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-keep-locs&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-g&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-bin-annot&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-bin-annot-occurrences&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-I&lt;/span&gt; .mod.eobjs/byte &lt;span class=&quot;at&quot;&gt;-no-alias-deps&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-opaque&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-o&lt;/span&gt; .mod.eobjs/byte/dune__exe__Mod.cmi &lt;span class=&quot;at&quot;&gt;-c&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-intf&lt;/span&gt; mod.mli&lt;span class=&quot;kw&quot;&gt;)&lt;/span&gt;&lt;/span&gt;
+&lt;span id=&quot;cb4-6&quot;&gt;&lt;a href=&quot;#cb4-6&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;va&quot;&gt;Running&lt;/span&gt;&lt;span class=&quot;op&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;dv&quot;&gt;2&lt;/span&gt;&lt;span class=&quot;op&quot;&gt;]&lt;/span&gt;&lt;span class=&quot;ex&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;er&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;bu&quot;&gt;cd&lt;/span&gt; _build/default &lt;span class=&quot;kw&quot;&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span class=&quot;ex&quot;&gt;/.../.opam/5.2.1/bin/ocamlopt.opt&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-w&lt;/span&gt; @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 &lt;span class=&quot;at&quot;&gt;-strict-sequence&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-strict-formats&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-short-paths&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-keep-locs&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-g&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-I&lt;/span&gt; .mod.eobjs/byte &lt;span class=&quot;at&quot;&gt;-I&lt;/span&gt; .mod.eobjs/native &lt;span class=&quot;at&quot;&gt;-intf-suffix&lt;/span&gt; .ml &lt;span class=&quot;at&quot;&gt;-no-alias-deps&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-opaque&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-o&lt;/span&gt; .mod.eobjs/native/dune__exe__Mod.cmx &lt;span class=&quot;at&quot;&gt;-c&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-impl&lt;/span&gt; mod.ml&lt;span class=&quot;kw&quot;&gt;)&lt;/span&gt;&lt;/span&gt;
+&lt;span id=&quot;cb4-7&quot;&gt;&lt;a href=&quot;#cb4-7&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;va&quot;&gt;Running&lt;/span&gt;&lt;span class=&quot;op&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;dv&quot;&gt;3&lt;/span&gt;&lt;span class=&quot;op&quot;&gt;]&lt;/span&gt;&lt;span class=&quot;ex&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;er&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;bu&quot;&gt;cd&lt;/span&gt; _build/default &lt;span class=&quot;kw&quot;&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span class=&quot;ex&quot;&gt;/.../.opam/5.2.1/bin/ocamlopt.opt&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-w&lt;/span&gt; @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 &lt;span class=&quot;at&quot;&gt;-strict-sequence&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-strict-formats&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-short-paths&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-keep-locs&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-g&lt;/span&gt; &lt;span class=&quot;at&quot;&gt;-o&lt;/span&gt; mod.exe.o &lt;span class=&quot;at&quot;&gt;-output-complete-obj&lt;/span&gt; .mod.eobjs/native/dune__exe__Mod.cmx&lt;span class=&quot;kw&quot;&gt;)&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;I’m not exactly sure if there are better ways to do this, but we
+manually define rules to run the remaining steps:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;(rule
+ (targets modwrap.o)
+ (deps modwrap.c)
+ (action
+  (run ocamlopt %{deps})))
+
+(rule
+ (targets main.exe)
+ (deps main.c mod.exe.o modwrap.o)
+ (action
+  (run %{cc} -o %{targets} -I %{ocaml_where} %{deps} -lm)))&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;And voila!&lt;/p&gt;
+&lt;div class=&quot;sourceCode&quot; id=&quot;cb6&quot;&gt;&lt;pre
+class=&quot;sourceCode bash&quot;&gt;&lt;code class=&quot;sourceCode bash&quot;&gt;&lt;span id=&quot;cb6-1&quot;&gt;&lt;a href=&quot;#cb6-1&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;ex&quot;&gt;$&lt;/span&gt; dune exec ./main.exe&lt;/span&gt;
+&lt;span id=&quot;cb6-2&quot;&gt;&lt;a href=&quot;#cb6-2&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;ex&quot;&gt;fib&lt;/span&gt;&lt;span class=&quot;er&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;ex&quot;&gt;10&lt;/span&gt;&lt;span class=&quot;kw&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;ex&quot;&gt;=&lt;/span&gt; Result is: 89            &lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+    </content>
+    <link href="https://mt-caret.github.io/blog/2025-02-02-calling-ocaml-from-c" rel="alternate"/>
   </entry>
 </feed>

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<!-- taken from https://github.com/jgm/pandoc-templates/blob/05d510b4dc5af87cbf25d92fa8318f44e155b919/default.html5 -->
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="" >
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+      <meta name="dcterms.date" content="2025-02-02" />
+      <title>Calling OCaml from C</title>
+  <link rel="stylesheet" href="../static/reset.css" />
+  <link rel="stylesheet" href="../static/custom.css" />
+  <link rel="stylesheet" href="../static/highlighting.css" />
+    <!--[if lt IE 9]>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
+  <![endif]-->
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-Z1X55TYTWF"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        gtag('js', new Date());
+
+        gtag('config', 'G-Z1X55TYTWF');
+    </script></head>
+
+<body>
+  <div id="navigation-bar">
+    <div id="navigation-content">
+      <a href="../index.html">index</a>
+    </div>
+  </div>
+  <article>
+            <header id="title-block-header">
+      <h1 class="title">Calling OCaml from C</h1>
+                        <p class="date">2025-02-02</p>
+                  <p class="category">category: <a href="../category/tech.html">tech</a></p>
+                  <p class="tags">
+        tags: <a href="../tag/dune.html">dune</a> <a href="../tag/OCaml.html">OCaml</a> 
+      </p>
+          </header>
+            <p>These are some notes on putting together a
+            <code>dune</code> file for creating a C executable which
+            calls OCaml code.</p>
+            <!-- TODO: Add link to repository -->
+            <p>The OCaml manual describes how to call OCaml code from C
+            under the section “Advanced example with callbacks” in the
+            chapter “Interfacing C with OCaml”, using the following
+            invocations to <code>ocamlopt</code>:</p>
+            <div class="sourceCode" id="cb1"><pre
+            class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> ocamlopt <span class="at">-output-obj</span> <span class="at">-o</span> modcaml.o mod.ml</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> ocamlopt <span class="at">-c</span> modwrap.c</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> cp <span class="kw">`</span><span class="ex">ocamlopt</span> <span class="at">-where</span><span class="kw">`</span>/libasmrun.a mod.a <span class="kw">&amp;&amp;</span> <span class="fu">chmod</span> +w mod.a</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> ar r mod.a modcaml.o modwrap.o</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> cc <span class="at">-o</span> prog <span class="at">-I</span> <span class="kw">`</span><span class="ex">ocamlopt</span> <span class="at">-where</span><span class="kw">`</span> main.c mod.a <span class="at">-lm</span></span></code></pre></div>
+            <p>Reading <a
+            href="https://ocaml.org/manual/5.3/native.html">the section
+            in the OCaml manual about <code>ocamlopt</code> command line
+            options carefully</a>, it looks like we can use
+            <code>-output-complete-obj</code> to simplify above
+            commands:</p>
+            <div class="sourceCode" id="cb2"><pre
+            class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> ocamlopt <span class="at">-output-complete-obj</span> <span class="at">-o</span> modcaml.o mod.ml</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> ocamlopt <span class="at">-c</span> modwrap.c</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> cc <span class="at">-o</span> prog_native2 <span class="at">-I</span> <span class="kw">`</span><span class="ex">ocamlopt</span> <span class="at">-where</span><span class="kw">`</span> main.c modcaml.o modwrap.o <span class="at">-lm</span></span></code></pre></div>
+            <h2 id="translating-to-dune">Translating to dune</h2>
+            <p>We first want to recreate the <code>modcaml.o</code>
+            file. Grepping in the dune codebase for
+            <code>-output-complete-obj</code>, we find <a
+            href="https://github.com/ocaml/dune/blob/bfe07c69771f016ab21f53069a898e642d3d1385/src/dune_rules/exe.ml#L75">this
+            code which matches on
+            <code>Executables.Link_mode.t</code></a>.</p>
+            <p>The dune docs mention how to specify <a
+            href="https://dune.readthedocs.io/en/stable/reference/dune/executable.html#linking-modes">linking
+            modes</a> for executables, so we’ll try that.</p>
+            <pre><code>(executables
+ (names mod)
+ (modes object))</code></pre>
+            <p>After some trial and error, I’ve figured out that the
+            target corresponding to this rule is
+            <code>mod.exe.o</code>:</p>
+            <div class="sourceCode" id="cb4"><pre
+            class="sourceCode bash"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> dune build <span class="at">--verbose</span> mod.exe.o</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">...</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="ex">Actual</span> targets:</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="ex">-</span> _build/default/mod.exe.o</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="va">Running</span><span class="op">[</span><span class="dv">1</span><span class="op">]</span><span class="ex">:</span> <span class="er">(</span><span class="bu">cd</span> _build/default <span class="kw">&amp;&amp;</span> <span class="ex">/.../.opam/5.2.1/bin/ocamlc.opt</span> <span class="at">-w</span> @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 <span class="at">-strict-sequence</span> <span class="at">-strict-formats</span> <span class="at">-short-paths</span> <span class="at">-keep-locs</span> <span class="at">-g</span> <span class="at">-bin-annot</span> <span class="at">-bin-annot-occurrences</span> <span class="at">-I</span> .mod.eobjs/byte <span class="at">-no-alias-deps</span> <span class="at">-opaque</span> <span class="at">-o</span> .mod.eobjs/byte/dune__exe__Mod.cmi <span class="at">-c</span> <span class="at">-intf</span> mod.mli<span class="kw">)</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="va">Running</span><span class="op">[</span><span class="dv">2</span><span class="op">]</span><span class="ex">:</span> <span class="er">(</span><span class="bu">cd</span> _build/default <span class="kw">&amp;&amp;</span> <span class="ex">/.../.opam/5.2.1/bin/ocamlopt.opt</span> <span class="at">-w</span> @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 <span class="at">-strict-sequence</span> <span class="at">-strict-formats</span> <span class="at">-short-paths</span> <span class="at">-keep-locs</span> <span class="at">-g</span> <span class="at">-I</span> .mod.eobjs/byte <span class="at">-I</span> .mod.eobjs/native <span class="at">-intf-suffix</span> .ml <span class="at">-no-alias-deps</span> <span class="at">-opaque</span> <span class="at">-o</span> .mod.eobjs/native/dune__exe__Mod.cmx <span class="at">-c</span> <span class="at">-impl</span> mod.ml<span class="kw">)</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="va">Running</span><span class="op">[</span><span class="dv">3</span><span class="op">]</span><span class="ex">:</span> <span class="er">(</span><span class="bu">cd</span> _build/default <span class="kw">&amp;&amp;</span> <span class="ex">/.../.opam/5.2.1/bin/ocamlopt.opt</span> <span class="at">-w</span> @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 <span class="at">-strict-sequence</span> <span class="at">-strict-formats</span> <span class="at">-short-paths</span> <span class="at">-keep-locs</span> <span class="at">-g</span> <span class="at">-o</span> mod.exe.o <span class="at">-output-complete-obj</span> .mod.eobjs/native/dune__exe__Mod.cmx<span class="kw">)</span></span></code></pre></div>
+            <p>I’m not exactly sure if there are better ways to do this,
+            but we manually define rules to run the remaining steps:</p>
+            <pre><code>(rule
+ (targets modwrap.o)
+ (deps modwrap.c)
+ (action
+  (run ocamlopt %{deps})))
+
+(rule
+ (targets main.exe)
+ (deps main.c mod.exe.o modwrap.o)
+ (action
+  (run %{cc} -o %{targets} -I %{ocaml_where} %{deps} -lm)))</code></pre>
+            <p>And voila!</p>
+            <div class="sourceCode" id="cb6"><pre
+            class="sourceCode bash"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> dune exec ./main.exe</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="ex">fib</span><span class="er">(</span><span class="ex">10</span><span class="kw">)</span> <span class="ex">=</span> Result is: 89            </span></code></pre></div>
+        <script src="https://utteranc.es/client.js" repo="mt-caret/blog" issue-term="pathname" theme="github-light"
+      crossorigin="anonymous" async></script>
+    <hr>
+    <small>
+      <a href="../index.html">index</a> |
+      <a href="../atom.xml">atom</a>/<a href="../rss.xml">rss</a> |
+      generated off rev <a href="https://github.com/mt-caret/blog-src/commit/2bbe166">2bbe166</a>
+    </small>
+  </article>
+</body>
+
+</html>
