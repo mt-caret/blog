@@ -1217,7 +1217,6 @@ href="https://github.com/mt-caret/blog-src">on GitHub</a>.</p>]]>
       <description>
         <![CDATA[<p>These are some notes on putting together a <code>dune</code> file for
 creating a C executable which calls OCaml code.</p>
-<!-- TODO: Add link to repository -->
 <p>The OCaml manual describes how to call OCaml code from C under the
 section “Advanced example with callbacks” in the chapter “Interfacing C
 with OCaml”, using the following invocations to
@@ -1273,7 +1272,10 @@ manually define rules to run the remaining steps:</p>
 <p>And voila!</p>
 <div class="sourceCode" id="cb6"><pre
 class="sourceCode bash"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> dune exec ./main.exe</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="ex">fib</span><span class="er">(</span><span class="ex">10</span><span class="kw">)</span> <span class="ex">=</span> Result is: 89            </span></code></pre></div>]]>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="ex">fib</span><span class="er">(</span><span class="ex">10</span><span class="kw">)</span> <span class="ex">=</span> Result is: 89            </span></code></pre></div>
+<p>The full code is available in the <a
+href="https://github.com/mt-caret/calling-ocaml-from-c">calling-ocaml-from-c</a>
+repository.</p>]]>
       </description>
       <pubDate>Sun, 02 Feb 2025 00:00:00 GMT</pubDate>
     </item>
