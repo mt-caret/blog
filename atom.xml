@@ -2,7 +2,7 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
   <id>https://mt-caret.github.io/blog</id>
   <title type="text">mt_caret&apos;s blog</title>
-  <generator uri="https://github.com/mt-caret/blog-src" version="2bbe166">blog-src</generator>
+  <generator uri="https://github.com/mt-caret/blog-src" version="0abd9d2">blog-src</generator>
   <updated>2025-02-02T00:00:00Z</updated>
   <author>
     <name>mt_caret</name>
@@ -1224,7 +1224,7 @@ href=&quot;https://github.com/mt-caret/blog-src&quot;&gt;on GitHub&lt;/a&gt;.&lt
   </entry>
   <entry>
     <id>tag:mt-caret.github.io,2025-02-02:6bf20f9a-1635-4cf0-98f2-80361e16eb61</id>
-    <title type="text">Calling OCaml from C</title>
+    <title type="text">Calling OCaml from C in dune</title>
     <updated>2025-02-02T00:00:00Z</updated>
     <published>2025-02-02T00:00:00Z</published>
     <content type="html">
@@ -1288,6 +1288,6 @@ manually define rules to run the remaining steps:&lt;/p&gt;
 class=&quot;sourceCode bash&quot;&gt;&lt;code class=&quot;sourceCode bash&quot;&gt;&lt;span id=&quot;cb6-1&quot;&gt;&lt;a href=&quot;#cb6-1&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;ex&quot;&gt;$&lt;/span&gt; dune exec ./main.exe&lt;/span&gt;
 &lt;span id=&quot;cb6-2&quot;&gt;&lt;a href=&quot;#cb6-2&quot; aria-hidden=&quot;true&quot; tabindex=&quot;-1&quot;&gt;&lt;/a&gt;&lt;span class=&quot;ex&quot;&gt;fib&lt;/span&gt;&lt;span class=&quot;er&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;ex&quot;&gt;10&lt;/span&gt;&lt;span class=&quot;kw&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;ex&quot;&gt;=&lt;/span&gt; Result is: 89            &lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
     </content>
-    <link href="https://mt-caret.github.io/blog/2025-02-02-calling-ocaml-from-c" rel="alternate"/>
+    <link href="https://mt-caret.github.io/blog/2025-02-02-calling-ocaml-from-c-in-dune" rel="alternate"/>
   </entry>
 </feed>
